@@ -167,20 +167,29 @@ bool CefBrowserPlatformDelegateNativeWin::CreateHostWindow() {
                                              window_info_.ex_style, has_menu);
   }
 
-  // Create the new browser window.
+#if 1
+    // Create the new browser window.
+  //window_info_.ex_style = window_info_.ex_style | WS_EX_CLIENTEDGE;
+    LOG(ERROR) << "window_info_.parent_window : " << window_info_.parent_window << "\twindowName : " << windowName.c_str() << "\tGetWndClass() : " << GetWndClass();
   CreateWindowEx(window_info_.ex_style, GetWndClass(), windowName.c_str(),
                  window_info_.style, window_rect.x, window_rect.y,
                  window_rect.width, window_rect.height,
                  window_info_.parent_window, window_info_.menu,
                  ::GetModuleHandle(nullptr), this);
+#endif
+
+  // Change border color to red
+  SetWindowLongPtr(window_info_.parent_window, GWL_EXSTYLE, WS_EX_LAYERED);
+  SetLayeredWindowAttributes(window_info_.parent_window, RGB(255, 0, 0), 0, LWA_COLORKEY);
 
   // It's possible for CreateWindowEx to fail if the parent window was
   // destroyed between the call to CreateBrowser and the above one.
+#if 0
   DCHECK(window_info_.window);
   if (!window_info_.window) {
     return false;
   }
-
+#endif
   host_window_created_ = true;
 
   // Add a reference that will later be released in DestroyBrowser().
@@ -514,11 +523,25 @@ LPCTSTR CefBrowserPlatformDelegateNativeWin::GetWndClass() {
   return L"CefBrowserWindow";
 }
 
+BOOL CALLBACK EnumChildProc(HWND hwnd, LPARAM lParam) {
+    int indent = static_cast<int>(lParam);
+    char className[256];
+    GetClassNameA(hwnd, className, sizeof(className));
+    for (int i = 0; i < indent; ++i) {
+        LOG(ERROR) << "  "; // Indentation for hierarchy
+    }
+    LOG(ERROR) << className << "(" << hwnd << ")" << std::endl;
+    EnumChildWindows(hwnd, EnumChildProc, lParam + 1); // Recursively enumerate child windows
+    return TRUE;
+}
+
+
 // static
 LRESULT CALLBACK CefBrowserPlatformDelegateNativeWin::WndProc(HWND hwnd,
                                                               UINT message,
                                                               WPARAM wParam,
                                                               LPARAM lParam) {
+    LOG(ERROR) << __FUNCTION__ << "\t" << hwnd;
   CefBrowserPlatformDelegateNativeWin* platform_delegate = nullptr;
   CefBrowserHostBase* browser = nullptr;
 
@@ -531,7 +554,37 @@ LRESULT CALLBACK CefBrowserPlatformDelegateNativeWin::WndProc(HWND hwnd,
   }
 
   switch (message) {
+
+  case WM_PAINT:
+
+      {
+      HWND hwndDesktop = hwnd;// GetDesktopWindow();
+      EnumChildWindows(hwndDesktop, EnumChildProc, 0);
+          HWND ghWnd = hwnd;
+          PAINTSTRUCT ps;
+          HDC hdc = BeginPaint(ghWnd, &ps);
+          // Custom painting code here
+          RECT rcClient;
+          GetClientRect(ghWnd, &rcClient);
+          HBRUSH hBrush = CreateSolidBrush(RGB(255, 255, 0)); // Red color, you can change this
+          FillRect(hdc, &rcClient, hBrush); // Fill the client area with the selected color
+          DeleteObject(hBrush);
+          EndPaint(ghWnd, &ps);
+      }
+      break;
     case WM_CLOSE:
+    {
+        HWND ghWnd = hwnd;
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(ghWnd, &ps);
+        // Custom painting code here
+        RECT rcClient;
+        GetClientRect(ghWnd, &rcClient);
+        HBRUSH hBrush = CreateSolidBrush(RGB(255, 255, 0)); // Red color, you can change this
+        FillRect(hdc, &rcClient, hBrush); // Fill the client area with the selected color
+        DeleteObject(hBrush);
+        EndPaint(ghWnd, &ps);
+    }
       if (browser && !browser->TryCloseBrowser()) {
         // Cancel the close.
         return 0;
@@ -548,6 +601,7 @@ LRESULT CALLBACK CefBrowserPlatformDelegateNativeWin::WndProc(HWND hwnd,
       DCHECK(platform_delegate);
       // Associate |platform_delegate| with the window handle.
       gfx::SetWindowUserData(hwnd, platform_delegate);
+      // CEF browser windows platform delegate which has created this windows 
       platform_delegate->window_info_.window = hwnd;
 
       if (platform_delegate->has_frame_) {

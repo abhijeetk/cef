@@ -78,6 +78,15 @@ std::unique_ptr<CefBrowserPlatformDelegate> CefBrowserPlatformDelegate::Create(
   const SkColor background_color = CefContext::Get()->GetBackgroundColor(
       &create_params.settings, is_windowless ? STATE_ENABLED : STATE_DISABLED);
 
+#if 0
+  LOG(ERROR) << __FUNCTION__ << "\t" << __LINE__
+             << "\nis_windowless : " << is_windowless
+             << "\ncreate_params.window_info->windowless_rendering_enabled : "
+             << create_params.window_info->windowless_rendering_enabled
+             << "\ncreate_params.client->GetRenderHandler().get() : "
+             << create_params.client->GetRenderHandler().get();
+#endif
+
   if (cef::IsChromeRuntimeEnabled()) {
     CefWindowInfo window_info;
     if (create_params.window_info) {

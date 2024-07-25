@@ -472,6 +472,7 @@ ChromeBrowserHostImpl::ChromeBrowserHostImpl(
 Browser* ChromeBrowserHostImpl::CreateBrowser(
     const CefBrowserCreateParams& params,
     std::optional<Browser::CreateParams> browser_create_params) {
+    // We created browserview and windows hosting it and attached to to browserframe
   Browser::CreateParams chrome_params = [&params, &browser_create_params]() {
     if (!browser_create_params.has_value()) {
       auto* profile = CefRequestContextImpl::GetProfile(params.request_context);

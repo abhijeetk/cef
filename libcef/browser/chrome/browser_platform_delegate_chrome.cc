@@ -143,6 +143,5 @@ gfx::NativeWindow CefBrowserPlatformDelegateChrome::GetNativeWindow() const {
   if (chrome_browser_ && chrome_browser_->window()) {
     return chrome_browser_->window()->GetNativeWindow();
   }
-  DCHECK(false);
   return gfx::NativeWindow();
 }
