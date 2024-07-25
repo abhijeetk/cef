@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 
 #import <Cocoa/Cocoa.h>
+
 #include "include/cef_app.h"
 #import "include/cef_application_mac.h"
 #include "include/cef_command_ids.h"
@@ -77,6 +78,7 @@ void RemoveMenuItem(NSMenu* menu, SEL action_selector) {
 - (IBAction)menuTestsMuteAudio:(id)sender;
 - (IBAction)menuTestsUnmuteAudio:(id)sender;
 - (IBAction)menuTestsOtherTests:(id)sender;
+- (IBAction)menuTestsDumpWithoutCrashing:(id)sender;
 - (void)enableAccessibility:(bool)bEnable;
 @end
 
@@ -221,7 +223,7 @@ void RemoveMenuItem(NSMenu* menu, SEL action_selector) {
       RemoveMenuItem(tests_menu.submenu, @selector(menuTestsSetFPS:));
       RemoveMenuItem(tests_menu.submenu, @selector(menuTestsSetScaleFactor:));
     }
-    if (!main_context->UseViews()) {
+    if (!main_context->UseViewsGlobal()) {
       // Remove the Views-related menu items when not using Views.
       RemoveMenuItem(tests_menu.submenu, @selector(menuTestsWindowDialog:));
     }
@@ -319,6 +321,10 @@ void RemoveMenuItem(NSMenu* menu, SEL action_selector) {
 
 - (IBAction)menuTestsOtherTests:(id)sender {
   [self testsItemSelected:ID_TESTS_OTHER_TESTS];
+}
+
+- (IBAction)menuTestsDumpWithoutCrashing:(id)sender {
+  [self testsItemSelected:ID_TESTS_DUMP_WITHOUT_CRASHING];
 }
 
 - (scoped_refptr<client::RootWindow>)getActiveRootWindow {
@@ -583,7 +589,7 @@ int RunMain(int argc, char* argv[]) {
     // fails or if early exit is desired (for example, due to process singleton
     // relaunch behavior).
     if (!context->Initialize(main_args, settings, app, nullptr)) {
-      return 1;
+      return CefGetExitCode();
     }
 
     // Register scheme handlers.

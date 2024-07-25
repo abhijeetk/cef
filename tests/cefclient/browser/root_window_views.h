@@ -25,7 +25,7 @@ class RootWindowViews : public RootWindow,
   // Constructor may be called on any thread. |parent_window| will be
   // non-nullptr for popup browsers with a RootWindow parent (called on the UI
   // thread only).
-  explicit RootWindowViews(RootWindowViews* parent_window);
+  explicit RootWindowViews(bool use_alloy_style);
   ~RootWindowViews() override;
 
   void SetTitlebarHeight(const std::optional<float>& height);
@@ -51,8 +51,6 @@ class RootWindowViews : public RootWindow,
   CefRefPtr<CefBrowser> GetBrowser() const override;
   ClientWindowHandle GetWindowHandle() const override;
   bool WithWindowlessRendering() const override { return false; }
-  bool WithExtension() const override;
-  void OnExtensionsChanged(const ExtensionSet& extensions) override;
 
   // ViewsWindow::Delegate methods:
   bool WithControls() override;
@@ -67,15 +65,13 @@ class RootWindowViews : public RootWindow,
   void OnViewsWindowActivated(CefRefPtr<ViewsWindow> window) override;
   ViewsWindow::Delegate* GetDelegateForPopup(
       CefRefPtr<CefClient> client) override;
-  void CreateExtensionWindow(CefRefPtr<CefExtension> extension,
-                             const CefRect& source_bounds,
-                             CefRefPtr<CefWindow> parent_window,
-                             base::OnceClosure close_callback) override;
   void OnTest(int test_id) override;
   void OnExit() override;
 
  protected:
   // ClientHandler::Delegate methods:
+  bool UseViews() const override { return true; }
+  bool UseAlloyStyle() const override { return IsAlloyStyle(); }
   void OnBrowserCreated(CefRefPtr<CefBrowser> browser) override;
   void OnBrowserClosing(CefRefPtr<CefBrowser> browser) override;
   void OnBrowserClosed(CefRefPtr<CefBrowser> browser) override;
@@ -120,7 +116,6 @@ class RootWindowViews : public RootWindow,
   cef_show_state_t initial_show_state_ = CEF_SHOW_STATE_NORMAL;
   bool position_on_resize_ = false;
   CefRefPtr<ViewsWindow> window_;
-  ExtensionSet pending_extensions_;
   scoped_refptr<ImageCache> image_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(RootWindowViews);

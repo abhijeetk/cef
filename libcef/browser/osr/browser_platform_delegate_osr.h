@@ -5,8 +5,9 @@
 #ifndef CEF_LIBCEF_BROWSER_OSR_BROWSER_PLATFORM_DELEGATE_OSR_H_
 #define CEF_LIBCEF_BROWSER_OSR_BROWSER_PLATFORM_DELEGATE_OSR_H_
 
-#include "libcef/browser/alloy/browser_platform_delegate_alloy.h"
-#include "libcef/browser/native/browser_platform_delegate_native.h"
+#include "base/memory/raw_ptr.h"
+#include "cef/libcef/browser/alloy/browser_platform_delegate_alloy.h"
+#include "cef/libcef/browser/native/browser_platform_delegate_native.h"
 
 class CefRenderWidgetHostViewOSR;
 class CefWebContentsViewOSR;
@@ -22,13 +23,13 @@ class CefBrowserPlatformDelegateOsr
  public:
   // CefBrowserPlatformDelegate methods:
   void CreateViewForWebContents(
-      content::WebContentsView** view,
-      content::RenderViewHostDelegateView** delegate_view) override;
+      raw_ptr<content::WebContentsView>* view,
+      raw_ptr<content::RenderViewHostDelegateView>* delegate_view) override;
   void WebContentsCreated(content::WebContents* web_contents,
                           bool owned) override;
+  void WebContentsDestroyed(content::WebContents* web_contents) override;
   void RenderViewCreated(content::RenderViewHost* render_view_host) override;
   void BrowserCreated(CefBrowserHostBase* browser) override;
-  void NotifyBrowserDestroyed() override;
   void BrowserDestroyed(CefBrowserHostBase* browser) override;
   SkColor GetBackgroundColor() const override;
   void WasResized() override;
@@ -46,10 +47,9 @@ class CefBrowserPlatformDelegateOsr
   gfx::Point GetScreenPoint(const gfx::Point& view,
                             bool want_dip_coords) const override;
   void ViewText(const std::string& text) override;
-  bool HandleKeyboardEvent(
-      const content::NativeWebKeyboardEvent& event) override;
+  bool HandleKeyboardEvent(const input::NativeWebKeyboardEvent& event) override;
   CefEventHandle GetEventHandle(
-      const content::NativeWebKeyboardEvent& event) const override;
+      const input::NativeWebKeyboardEvent& event) const override;
   std::unique_ptr<CefJavaScriptDialogRunner> CreateJavaScriptDialogRunner()
       override;
   std::unique_ptr<CefMenuRunner> CreateMenuRunner() override;
@@ -87,10 +87,9 @@ class CefBrowserPlatformDelegateOsr
   void DragSourceEndedAt(int x, int y, cef_drag_operations_mask_t op) override;
   void DragSourceSystemDragEnded() override;
   void AccessibilityEventReceived(
-      const content::AXEventNotificationDetails& eventData) override;
+      const ui::AXUpdatesAndEvents& details) override;
   void AccessibilityLocationChangesReceived(
-      const std::vector<content::AXLocationChangeNotificationDetails>& locData)
-      override;
+      const std::vector<ui::AXLocationChanges>& details) override;
 
   // CefBrowserPlatformDelegateNative::WindowlessHandler methods:
   CefWindowHandle GetParentWindowHandle() const override;
@@ -113,7 +112,8 @@ class CefBrowserPlatformDelegateOsr
   const bool use_shared_texture_;
   const bool use_external_begin_frame_;
 
-  CefWebContentsViewOSR* view_osr_ = nullptr;  // Not owned by this class.
+  // Not owned by this class.
+  raw_ptr<CefWebContentsViewOSR> view_osr_ = nullptr;
 
   // Pending drag/drop data.
   CefRefPtr<CefDragData> drag_data_;
@@ -126,7 +126,7 @@ class CefBrowserPlatformDelegateOsr
   // We also keep track of the RenderViewHost we're dragging over to avoid
   // sending the drag exited message after leaving the current
   // view. |current_rvh_for_drag_| should not be dereferenced.
-  void* current_rvh_for_drag_ = nullptr;
+  raw_ptr<void> current_rvh_for_drag_ = nullptr;
 
   // We keep track of the RenderWidgetHost from which the current drag started,
   // in order to properly route the drag end message to it.

@@ -2,33 +2,36 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "cef/libcef/browser/chrome/chrome_browser_delegate.h"
+
 #include <memory>
 
-#include "libcef/browser/chrome/chrome_browser_delegate.h"
-
-#include "libcef/browser/browser_contents_delegate.h"
-#include "libcef/browser/browser_host_base.h"
-#include "libcef/browser/browser_info_manager.h"
-#include "libcef/browser/browser_platform_delegate.h"
-#include "libcef/browser/chrome/chrome_browser_context.h"
-#include "libcef/browser/chrome/chrome_browser_host_impl.h"
-#include "libcef/browser/chrome/views/chrome_browser_view.h"
-#include "libcef/browser/chrome/views/chrome_child_window.h"
-#include "libcef/browser/media_access_query.h"
-#include "libcef/browser/request_context_impl.h"
-#include "libcef/browser/views/browser_view_impl.h"
-#include "libcef/browser/views/window_impl.h"
-#include "libcef/common/app_manager.h"
-#include "libcef/common/frame_util.h"
-
+#include "cef/libcef/browser/browser_contents_delegate.h"
+#include "cef/libcef/browser/browser_host_base.h"
+#include "cef/libcef/browser/browser_info_manager.h"
+#include "cef/libcef/browser/browser_platform_delegate.h"
+#include "cef/libcef/browser/chrome/chrome_browser_context.h"
+#include "cef/libcef/browser/chrome/chrome_browser_host_impl.h"
+#include "cef/libcef/browser/chrome/views/chrome_browser_view.h"
+#include "cef/libcef/browser/chrome/views/chrome_child_window.h"
+#include "cef/libcef/browser/devtools/devtools_window_runner.h"
+#include "cef/libcef/browser/hang_monitor.h"
+#include "cef/libcef/browser/media_access_query.h"
+#include "cef/libcef/browser/request_context_impl.h"
+#include "cef/libcef/browser/views/browser_view_impl.h"
+#include "cef/libcef/browser/views/window_impl.h"
+#include "cef/libcef/common/app_manager.h"
+#include "cef/libcef/common/frame_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
+#include "components/input/native_web_keyboard_event.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/keyboard_event_processing_result.h"
+#include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
-#include "content/public/common/input/native_web_keyboard_event.h"
+#include "third_party/blink/public/mojom/page/draggable_region.mojom.h"
 
 using content::KeyboardEventProcessingResult;
 
@@ -52,23 +55,35 @@ ChromeBrowserDelegate::ChromeBrowserDelegate(
 
 ChromeBrowserDelegate::~ChromeBrowserDelegate() = default;
 
+// static
 Browser* ChromeBrowserDelegate::CreateDevToolsBrowser(
     Profile* profile,
     Browser* opener,
+    content::WebContents* inspected_web_contents,
     std::unique_ptr<content::WebContents>& devtools_contents) {
   // |opener| is the same value that will be passed to the ChromeBrowserDelegate
-  // constructor for the new popup Browser. It may be nullptr in certain rare
+  // constructor for the new popup Browser. It may be nullptr in certain
   // situations (e.g. if DevTools is launched for a WebContents that is not a
-  // Browser Tab). In that case, the popup browser host will instead be created
-  // via SetAsDelegate.
-  auto opener_browser_host =
+  // Browser Tab).
+  CefRefPtr<CefBrowserHostBase> opener_browser_host =
       opener ? ChromeBrowserHostImpl::GetBrowserForBrowser(opener) : nullptr;
   if (!opener_browser_host) {
-    return nullptr;
+    // |inspected_web_contents| may be an Alloy style browser.
+    opener_browser_host =
+        CefBrowserHostBase::GetBrowserForContents(inspected_web_contents);
+    if (!opener_browser_host) {
+      // The popup browser host will instead be created via SetAsDelegate.
+      return nullptr;
+    }
   }
 
   // We expect openers and popups to have the same Profile.
-  CHECK_EQ(opener->profile(), profile);
+  CHECK_EQ(
+      CefRequestContextImpl::GetProfile(opener_browser_host->request_context()),
+      profile);
+  if (opener) {
+    CHECK_EQ(opener->profile(), profile);
+  }
 
   //
   // 1. Get configuration settings from the user and create the new platform
@@ -83,30 +98,30 @@ Browser* ChromeBrowserDelegate::CreateDevToolsBrowser(
   CefBrowserCreateParams create_params;
   CefWindowInfo window_info;
 
+  auto* devtools_window_runner = opener_browser_host->GetDevToolsWindowRunner();
+  auto pending_show_devtools_params =
+      devtools_window_runner->TakePendingParams();
+
   // If |client| is empty, or if the user clears |client| in
   // OnBeforeDevToolsPopup, we'll use the result of GetDefaultClient() later on
   // in CreateBrowserHost().
-  if (pending_show_devtools_params_) {
+  if (pending_show_devtools_params) {
     // Start with the params passed to CefBrowserHost::ShowDevTools().
-    create_params.client = pending_show_devtools_params_->client_;
-    create_params.settings = pending_show_devtools_params_->settings_;
-    window_info = pending_show_devtools_params_->window_info_;
-
-    // Pending params are only used a single time.
-    pending_show_devtools_params_.reset();
+    create_params.client = pending_show_devtools_params->client_;
+    create_params.settings = pending_show_devtools_params->settings_;
+    window_info = pending_show_devtools_params->window_info_;
   } else {
     // Start with the same client and settings as the opener.
     create_params.client = opener_client;
     create_params.settings = opener_browser_host->settings();
 
-#if BUILDFLAG(IS_WIN)
-    window_info.SetAsPopup(nullptr, CefString());
-#endif
+    CefBrowserCreateParams::InitWindowInfo(&window_info,
+                                           opener_browser_host.get());
   }
 
   // Start with the same extra info as the opener, for consistency with
-  // current Alloy runtime behavior (see CefDevToolsFrontend::Show). This
-  // value, if non-empty, will be read-only.
+  // previous Alloy runtime behavior. This value, if non-empty, will be
+  // read-only.
   create_params.extra_info = opener_browser_host->browser_info()->extra_info();
   DCHECK(!create_params.extra_info || create_params.extra_info->IsReadOnly());
 
@@ -120,10 +135,14 @@ Browser* ChromeBrowserDelegate::CreateDevToolsBrowser(
         create_params.settings, create_params.extra_info, &use_default_window);
   }
 
-  if (opener_browser_host->platform_delegate()->HasExternalParent()) {
+  if (window_info.windowless_rendering_enabled) {
+    LOG(ERROR)
+        << "Windowless rendering is not supported for this DevTools window";
+  } else if (opener_browser_host->platform_delegate()->HasExternalParent()) {
     // A parent window handle for DevTools creation is only supported if the
     // opener also has an external parent.
-    create_params.MaybeSetWindowInfo(window_info);
+    create_params.MaybeSetWindowInfo(window_info, /*allow_alloy_style=*/false,
+                                     /*allow_chrome_style=*/true);
   } else if (chrome_child_window::HasParentHandle(window_info)) {
     LOG(ERROR) << "Parent window handle not supported for this DevTools window";
   }
@@ -131,20 +150,24 @@ Browser* ChromeBrowserDelegate::CreateDevToolsBrowser(
   create_params.popup_with_views_hosted_opener =
       CefBrowserInfoManager::ShouldCreateViewsHostedPopup(opener_browser_host,
                                                           use_default_window);
+  create_params.popup_with_alloy_style_opener = false;
 
   auto platform_delegate = CefBrowserPlatformDelegate::Create(create_params);
   CHECK(platform_delegate);
 
+  // Expect runtime style to match.
+  CHECK(platform_delegate->IsChromeStyle());
+
   //
-  // 2. Create the new browser host. Logical equivalent of WebContentsCreated()
-  // for normal popups.
+  // 2. Create the new browser host. Logical equivalent of
+  // WebContentsCreated() for normal popups.
   //
 
   // Create a new browser host that remains alive until the associated
-  // WebContents is destroyed. Associate that browser host with the WebContents
-  // and execute initial client callbacks. Deliver required information to the
-  // renderer process.
-  auto browser_host = CreateBrowserHostForPopup(
+  // WebContents is destroyed. Associate that browser host with the
+  // WebContents and execute initial client callbacks. Deliver required
+  // information to the renderer process.
+  auto browser_host = ChromeBrowserDelegate::CreateBrowserHostForPopup(
       devtools_contents.get(), create_params.settings, create_params.client,
       create_params.extra_info, std::move(platform_delegate),
       /*is_devtools_popup=*/true, opener_browser_host);
@@ -168,10 +191,10 @@ Browser* ChromeBrowserDelegate::CreateDevToolsBrowser(
                                std::move(chrome_params));
 
   // Give the opener browser a reference to the new DevTools browser. Do this
-  // last because don't want the client to attempt access to the DevTools
-  // browser via opener browser methods (e.g. ShowDevTools, CloseDevTools, etc)
-  // while creation is still in progress.
-  opener_browser_host->SetDevToolsBrowserHost(browser_host->GetWeakPtr());
+  // last because we don't want the client to attempt access to the DevTools
+  // browser via opener browser methods (e.g. ShowDevTools, CloseDevTools,
+  // etc) while creation is still in progress.
+  devtools_window_runner->SetDevToolsBrowserHost(browser_host->GetWeakPtr());
 
   auto browser = browser_host->browser();
   CHECK(browser);
@@ -202,7 +225,8 @@ std::unique_ptr<content::WebContents> ChromeBrowserDelegate::AddWebContents(
 void ChromeBrowserDelegate::OnWebContentsCreated(
     content::WebContents* new_contents) {
   // Necessary to receive LoadingStateChanged calls during initial navigation.
-  // This will be called again in Browser::SetAsDelegate, which should be fine.
+  // This will be called again in Browser::SetAsDelegate, which should be
+  // fine.
   new_contents->SetDelegate(browser_);
 
   SetAsDelegate(new_contents, /*set_delegate=*/true);
@@ -219,7 +243,7 @@ void ChromeBrowserDelegate::SetAsDelegate(content::WebContents* web_contents,
 
   if (browser_host) {
     // We already have a browser host, so just change the associated Browser.
-    browser_host->SetBrowser(set_delegate ? browser_ : nullptr);
+    browser_host->SetBrowser(set_delegate ? browser_.get() : nullptr);
     return;
   }
 
@@ -232,14 +256,18 @@ void ChromeBrowserDelegate::SetAsDelegate(content::WebContents* web_contents,
   auto platform_delegate = CefBrowserPlatformDelegate::Create(create_params_);
   CHECK(platform_delegate);
 
+  // Expect runtime style to match.
+  CHECK(platform_delegate->IsChromeStyle());
+
   auto browser_info = CefBrowserInfoManager::GetInstance()->CreateBrowserInfo(
-      is_devtools_popup, /*is_windowless=*/false, create_params_.extra_info);
+      is_devtools_popup, /*is_windowless=*/false,
+      platform_delegate->IsPrintPreviewSupported(), create_params_.extra_info);
 
   auto request_context_impl =
       CefRequestContextImpl::GetOrCreateForRequestContext(
           create_params_.request_context);
 
-  CreateBrowserHost(web_contents, create_params_.settings,
+  CreateBrowserHost(browser_, web_contents, create_params_.settings,
                     create_params_.client, std::move(platform_delegate),
                     browser_info, is_devtools_popup, /*opener=*/nullptr,
                     request_context_impl);
@@ -361,6 +389,26 @@ ChromeBrowserDelegate::RequestMediaAccessPermissionEx(
   return callback;
 }
 
+bool ChromeBrowserDelegate::RendererUnresponsiveEx(
+    content::WebContents* source,
+    content::RenderWidgetHost* render_widget_host,
+    base::RepeatingClosure hang_monitor_restarter) {
+  if (auto browser = ChromeBrowserHostImpl::GetBrowserForBrowser(browser_)) {
+    return hang_monitor::RendererUnresponsive(browser.get(), render_widget_host,
+                                              hang_monitor_restarter);
+  }
+  return false;
+}
+
+bool ChromeBrowserDelegate::RendererResponsiveEx(
+    content::WebContents* source,
+    content::RenderWidgetHost* render_widget_host) {
+  if (auto browser = ChromeBrowserHostImpl::GetBrowserForBrowser(browser_)) {
+    return hang_monitor::RendererResponsive(browser.get(), render_widget_host);
+  }
+  return false;
+}
+
 bool ChromeBrowserDelegate::SupportsFramelessPictureInPicture() const {
   if (!browser_->is_type_picture_in_picture()) {
     return false;
@@ -406,9 +454,23 @@ const std::optional<SkRegion> ChromeBrowserDelegate::GetDraggableRegion()
   return draggable_region_;
 }
 
-void ChromeBrowserDelegate::UpdateDraggableRegion(const SkRegion& region) {
-  DCHECK(SupportsDraggableRegion());
-  draggable_region_ = region;
+void ChromeBrowserDelegate::DraggableRegionsChanged(
+    const std::vector<blink::mojom::DraggableRegionPtr>& regions,
+    content::WebContents* contents) {
+  if (SupportsDraggableRegion()) {
+    SkRegion sk_region;
+    for (const auto& region : regions) {
+      sk_region.op(
+          SkIRect::MakeLTRB(region->bounds.x(), region->bounds.y(),
+                            region->bounds.x() + region->bounds.width(),
+                            region->bounds.y() + region->bounds.height()),
+          region->draggable ? SkRegion::kUnion_Op : SkRegion::kDifference_Op);
+    }
+
+    draggable_region_ = sk_region;
+  } else if (auto delegate = GetDelegateForWebContents(contents)) {
+    delegate->DraggableRegionsChanged(regions, contents);
+  }
 }
 
 void ChromeBrowserDelegate::WindowFullscreenStateChanged() {
@@ -456,17 +518,19 @@ void ChromeBrowserDelegate::WebContentsCreated(
   }
 
   // Create a new browser host that remains alive until the associated
-  // WebContents is destroyed. Associate that browser host with the WebContents
-  // and execute initial client callbacks. Deliver required information to the
-  // renderer process.
+  // WebContents is destroyed. Associate that browser host with the
+  // WebContents and execute initial client callbacks. Deliver required
+  // information to the renderer process.
   CreateBrowserHostForPopup(new_contents, settings, client, extra_info,
                             std::move(platform_delegate),
                             /*is_devtools_popup=*/false, opener);
 }
 
-content::WebContents* ChromeBrowserDelegate::OpenURLFromTab(
+content::WebContents* ChromeBrowserDelegate::OpenURLFromTabEx(
     content::WebContents* source,
-    const content::OpenURLParams& params) {
+    const content::OpenURLParams& params,
+    base::OnceCallback<void(content::NavigationHandle&)>&
+        navigation_handle_callback) {
   // |source| may be nullptr when opening a link from chrome UI such as the
   // Reading List sidebar. In that case we default to using the Browser's
   // currently active WebContents.
@@ -478,7 +542,8 @@ content::WebContents* ChromeBrowserDelegate::OpenURLFromTab(
   // Return nullptr to cancel the navigation. Otherwise, proceed with default
   // chrome handling.
   if (auto delegate = GetDelegateForWebContents(source)) {
-    return delegate->OpenURLFromTab(source, params);
+    return delegate->OpenURLFromTabEx(source, params,
+                                      navigation_handle_callback);
   }
   return nullptr;
 }
@@ -553,9 +618,19 @@ void ChromeBrowserDelegate::CanDownload(
   std::move(callback).Run(true);
 }
 
+content::JavaScriptDialogManager*
+ChromeBrowserDelegate::GetJavaScriptDialogManager(
+    content::WebContents* source) {
+  auto browser_host = ChromeBrowserHostImpl::GetBrowserForContents(source);
+  if (browser_host) {
+    return browser_host->GetJavaScriptDialogManager();
+  }
+  return nullptr;
+}
+
 KeyboardEventProcessingResult ChromeBrowserDelegate::PreHandleKeyboardEvent(
     content::WebContents* source,
-    const content::NativeWebKeyboardEvent& event) {
+    const input::NativeWebKeyboardEvent& event) {
   if (auto delegate = GetDelegateForWebContents(source)) {
     return delegate->PreHandleKeyboardEvent(source, event);
   }
@@ -564,27 +639,23 @@ KeyboardEventProcessingResult ChromeBrowserDelegate::PreHandleKeyboardEvent(
 
 bool ChromeBrowserDelegate::HandleKeyboardEvent(
     content::WebContents* source,
-    const content::NativeWebKeyboardEvent& event) {
+    const input::NativeWebKeyboardEvent& event) {
   if (auto delegate = GetDelegateForWebContents(source)) {
     return delegate->HandleKeyboardEvent(source, event);
   }
   return false;
 }
 
-void ChromeBrowserDelegate::SetPendingShowDevToolsParams(
-    std::unique_ptr<CefShowDevToolsParams> params) {
-  DCHECK(!pending_show_devtools_params_);
-  pending_show_devtools_params_ = std::move(params);
-}
-
+// static
 CefRefPtr<ChromeBrowserHostImpl> ChromeBrowserDelegate::CreateBrowserHost(
+    Browser* browser,
     content::WebContents* web_contents,
     const CefBrowserSettings& settings,
     CefRefPtr<CefClient> client,
     std::unique_ptr<CefBrowserPlatformDelegate> platform_delegate,
     scoped_refptr<CefBrowserInfo> browser_info,
     bool is_devtools_popup,
-    CefRefPtr<ChromeBrowserHostImpl> opener,
+    CefRefPtr<CefBrowserHostBase> opener,
     CefRefPtr<CefRequestContextImpl> request_context_impl) {
   CEF_REQUIRE_UIT();
   DCHECK(web_contents);
@@ -594,6 +665,7 @@ CefRefPtr<ChromeBrowserHostImpl> ChromeBrowserDelegate::CreateBrowserHost(
 
   // If |opener| is non-nullptr it must be a popup window.
   DCHECK(!opener.get() || browser_info->is_popup());
+  DCHECK(browser || opener);
 
   if (!client) {
     if (auto app = CefAppManager::Get()->GetApplication()) {
@@ -607,15 +679,20 @@ CefRefPtr<ChromeBrowserHostImpl> ChromeBrowserDelegate::CreateBrowserHost(
     LOG(WARNING) << "Creating a chrome browser without a client";
   }
 
-  // Get or create a ChromeBrowserContext for the browser Profile. Creation may
-  // be necessary when selecting a new or incognito Profile for the first time
-  // via the Chrome UI.
-  auto chrome_browser_context =
-      ChromeBrowserContext::GetOrCreateForProfile(browser_->profile());
+  Profile* profile =
+      browser ? browser->profile()
+              : Profile::FromBrowserContext(web_contents->GetBrowserContext());
 
-  // If the provided CefRequestContext matches the ChromeBrowserContext then use
-  // the provided one, as it will have the preferred CefRequestContextHandler.
-  // Otherwise, get or create a CefRequestContext that matches.
+  // Get or create a ChromeBrowserContext for the browser Profile. Creation
+  // may be necessary when selecting a new or incognito Profile for the first
+  // time via the Chrome UI.
+  auto* chrome_browser_context =
+      ChromeBrowserContext::GetOrCreateForProfile(profile);
+
+  // If the provided CefRequestContext matches the ChromeBrowserContext then
+  // use the provided one, as it will have the preferred
+  // CefRequestContextHandler. Otherwise, get or create a CefRequestContext
+  // that matches.
   if (chrome_browser_context != request_context_impl->GetBrowserContext()) {
     CefRefPtr<CefRequestContextHandler> handler;
     if (auto app = CefAppManager::Get()->GetApplication()) {
@@ -637,12 +714,13 @@ CefRefPtr<ChromeBrowserHostImpl> ChromeBrowserDelegate::CreateBrowserHost(
   // The Chrome browser for a normal popup won't be created until
   // AddNewContents().
   if (!opener) {
-    browser_host->SetBrowser(browser_);
+    browser_host->SetBrowser(browser);
   }
 
   return browser_host;
 }
 
+// static
 CefRefPtr<ChromeBrowserHostImpl>
 ChromeBrowserDelegate::CreateBrowserHostForPopup(
     content::WebContents* web_contents,
@@ -651,10 +729,13 @@ ChromeBrowserDelegate::CreateBrowserHostForPopup(
     CefRefPtr<CefDictionaryValue> extra_info,
     std::unique_ptr<CefBrowserPlatformDelegate> platform_delegate,
     bool is_devtools_popup,
-    CefRefPtr<ChromeBrowserHostImpl> opener) {
+    CefRefPtr<CefBrowserHostBase> opener) {
+  DCHECK(opener);
+
   auto browser_info =
       CefBrowserInfoManager::GetInstance()->CreatePopupBrowserInfo(
-          web_contents, /*is_windowless=*/false, extra_info);
+          web_contents, /*is_windowless=*/false,
+          platform_delegate->IsPrintPreviewSupported(), extra_info);
   CHECK(browser_info->is_popup());
 
   // Popups must share the same RequestContext as the parent.
@@ -663,7 +744,7 @@ ChromeBrowserDelegate::CreateBrowserHostForPopup(
 
   // We don't officially own |web_contents| until AddNewContents() is called.
   // However, we need to install observers/delegates here.
-  return CreateBrowserHost(web_contents, settings, client,
+  return CreateBrowserHost(/*browser=*/nullptr, web_contents, settings, client,
                            std::move(platform_delegate), browser_info,
                            is_devtools_popup, opener, request_context_impl);
 }
@@ -707,10 +788,6 @@ std::unique_ptr<BrowserDelegate> BrowserDelegate::Create(
     Browser* browser,
     scoped_refptr<CreateParams> cef_params,
     const Browser* opener) {
-  if (!cef::IsChromeRuntimeEnabled()) {
-    return nullptr;
-  }
-
   CefBrowserCreateParams create_params;
 
   // Parameters from ChromeBrowserHostImpl::Create, or nullptr if the Browser
@@ -727,6 +804,16 @@ std::unique_ptr<BrowserDelegate> BrowserDelegate::Create(
 
   return std::make_unique<ChromeBrowserDelegate>(browser, create_params,
                                                  opener);
+}
+
+// static
+Browser* BrowserDelegate::CreateDevToolsBrowser(
+    Profile* profile,
+    Browser* opener,
+    content::WebContents* inspected_web_contents,
+    std::unique_ptr<content::WebContents>& devtools_contents) {
+  return ChromeBrowserDelegate::CreateDevToolsBrowser(
+      profile, opener, inspected_web_contents, devtools_contents);
 }
 
 }  // namespace cef

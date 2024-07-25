@@ -12,11 +12,16 @@
 #include "base/memory/scoped_refptr.h"
 #include "chrome/browser/ui/page_action/page_action_icon_type.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "third_party/blink/public/mojom/page/draggable_region.mojom-forward.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/base/window_open_disposition.h"
 
 class Browser;
 class Profile;
+
+namespace content {
+class NavigationHandle;
+}
 
 namespace cef {
 
@@ -39,15 +44,16 @@ class BrowserDelegate : public content::WebContentsDelegate {
       scoped_refptr<CreateParams> cef_params,
       const Browser* opener);
 
-  ~BrowserDelegate() override = default;
-
   // Optionally override Browser creation in
   // DevToolsWindow::CreateDevToolsBrowser. The returned Browser, if any, will
   // take ownership of |devtools_contents|.
-  virtual Browser* CreateDevToolsBrowser(
+  static Browser* CreateDevToolsBrowser(
       Profile* profile,
       Browser* opener,
-      std::unique_ptr<content::WebContents>& devtools_contents) = 0;
+      content::WebContents* inspected_web_contents,
+      std::unique_ptr<content::WebContents>& devtools_contents);
+
+  ~BrowserDelegate() override = default;
 
   // Optionally override chrome::AddWebContents behavior. This is most often
   // called via Browser::AddNewContents for new popup browsers and provides an
@@ -119,6 +125,21 @@ class BrowserDelegate : public content::WebContentsDelegate {
     return callback;
   }
 
+  // Same as RendererUnresponsive but returning false if unhandled.
+  virtual bool RendererUnresponsiveEx(
+      content::WebContents* source,
+      content::RenderWidgetHost* render_widget_host,
+      base::RepeatingClosure hang_monitor_restarter) {
+    return false;
+  }
+
+  // Same as RendererResponsive but returning false if unhandled.
+  virtual bool RendererResponsiveEx(
+      content::WebContents* source,
+      content::RenderWidgetHost* render_widget_host) {
+    return false;
+  }
+
   // Optionally override support for the specified window feature of type
   // Browser::WindowFeature.
   virtual std::optional<bool> SupportsWindowFeature(int feature) const {
@@ -135,16 +156,22 @@ class BrowserDelegate : public content::WebContentsDelegate {
     return std::nullopt;
   }
 
-  // Set the draggable region relative to web contents.
-  // Called from DraggableRegionsHostImpl::UpdateDraggableRegions.
-  virtual void UpdateDraggableRegion(const SkRegion& region) {}
-
   // Called at the end of a fullscreen transition.
   virtual void WindowFullscreenStateChanged() {}
 
   // Returns true if this browser has a Views-hosted opener. Only
   // applicable for Browsers of type picture_in_picture and devtools.
   virtual bool HasViewsHostedOpener() const { return false; }
+
+  // Same as OpenURLFromTab but only taking |navigation_handle_callback|
+  // if the return value is non-nullptr.
+  virtual content::WebContents* OpenURLFromTabEx(
+      content::WebContents* source,
+      const content::OpenURLParams& params,
+      base::OnceCallback<void(content::NavigationHandle&)>&
+          navigation_handle_callback) {
+    return nullptr;
+  }
 };
 
 }  // namespace cef

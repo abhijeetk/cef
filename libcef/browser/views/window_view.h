@@ -9,13 +9,13 @@
 #include <optional>
 #include <vector>
 
-#include "include/views/cef_window.h"
-#include "include/views/cef_window_delegate.h"
-
-#include "libcef/browser/views/overlay_view_host.h"
-#include "libcef/browser/views/panel_view.h"
-#include "libcef/browser/views/widget_destruction_observer.h"
-
+#include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
+#include "cef/include/views/cef_window.h"
+#include "cef/include/views/cef_window_delegate.h"
+#include "cef/libcef/browser/views/overlay_view_host.h"
+#include "cef/libcef/browser/views/panel_view.h"
+#include "cef/libcef/browser/views/widget_destruction_observer.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/display/display.h"
 #include "ui/views/widget/widget_delegate.h"
@@ -79,6 +79,7 @@ class CefWindowView
   // views::View methods:
   void ViewHierarchyChanged(
       const views::ViewHierarchyChangedDetails& details) override;
+  void OnThemeChanged() override;
 
   // views::WidgetObserver methods:
   void OnWidgetActivationChanged(views::Widget* widget, bool active) override;
@@ -109,6 +110,9 @@ class CefWindowView
       cef_docking_mode_t docking_mode,
       bool can_activate);
 
+  // Called from CefOverlayViewHost::Cleanup().
+  void RemoveOverlayView(CefOverlayViewHost* host, views::View* host_view);
+
   // Set/get the draggable regions.
   void SetDraggableRegions(const std::vector<CefDraggableRegion>& regions);
   SkRegion* draggable_region() const { return draggable_region_.get(); }
@@ -128,12 +132,20 @@ class CefWindowView
   std::optional<float> GetTitlebarHeight(bool required) const;
   bool IsFrameless() const { return is_frameless_; }
 
+  // Called before ThemeChanged() for native or Chrome theme changes.
+  void OnThemeColorsChanged(bool chrome_theme);
+
   // The Widget that hosts us, if we're a modal dialog. May return nullptr
   // during initialization and destruction.
   views::Widget* host_widget() const;
 
+  bool IsAlloyStyle() const { return is_alloy_style_; }
+  bool IsChromeStyle() const { return !is_alloy_style_; }
+
+  Delegate* window_delegate() const { return window_delegate_.get(); }
+
  private:
-  // Called when removed from the Widget and before |this| is deleted.
+  // Called after Widget teardown starts, before |this| is deleted.
   void DeleteDelegate();
 
   void MoveOverlaysIfNecessary();
@@ -142,7 +154,10 @@ class CefWindowView
   void UpdateBoundingBox(gfx::Rect* bounds, bool add_titlebar_height) const;
 
   // Not owned by this object.
-  Delegate* window_delegate_;
+  raw_ptr<Delegate> window_delegate_;
+
+  // True if the window is Alloy style, otherwise Chrome style.
+  const bool is_alloy_style_;
 
   // True if the window is frameless. It might still be resizable and draggable.
   bool is_frameless_ = false;
@@ -161,7 +176,9 @@ class CefWindowView
   std::unique_ptr<WidgetDestructionObserver> host_widget_destruction_observer_;
 
   // Hosts for overlay widgets.
-  std::vector<std::unique_ptr<CefOverlayViewHost>> overlay_hosts_;
+  std::vector<raw_ptr<CefOverlayViewHost>> overlay_hosts_;
+
+  base::WeakPtrFactory<CefWindowView> weak_ptr_factory_{this};
 };
 
 #endif  // CEF_LIBCEF_BROWSER_VIEWS_WINDOW_VIEW_H_

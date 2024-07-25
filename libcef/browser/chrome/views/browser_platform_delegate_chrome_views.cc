@@ -2,52 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "libcef/browser/chrome/views/browser_platform_delegate_chrome_views.h"
+#include "cef/libcef/browser/chrome/views/browser_platform_delegate_chrome_views.h"
 
-#include "include/views/cef_window.h"
-#include "libcef/browser/views/window_impl.h"
-
+#include "cef/include/views/cef_window.h"
+#include "cef/libcef/browser/views/window_impl.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/ui/browser.h"
 #include "components/zoom/zoom_controller.h"
 #include "ui/views/widget/widget.h"
-
-namespace {
-
-// Default popup window delegate implementation.
-class PopupWindowDelegate : public CefWindowDelegate {
- public:
-  explicit PopupWindowDelegate(CefRefPtr<CefBrowserView> browser_view)
-      : browser_view_(browser_view) {}
-
-  PopupWindowDelegate(const PopupWindowDelegate&) = delete;
-  PopupWindowDelegate& operator=(const PopupWindowDelegate&) = delete;
-
-  void OnWindowCreated(CefRefPtr<CefWindow> window) override {
-    window->AddChildView(browser_view_);
-    window->Show();
-    browser_view_->RequestFocus();
-  }
-
-  void OnWindowDestroyed(CefRefPtr<CefWindow> window) override {
-    browser_view_ = nullptr;
-  }
-
-  bool CanClose(CefRefPtr<CefWindow> window) override {
-    CefRefPtr<CefBrowser> browser = browser_view_->GetBrowser();
-    if (browser) {
-      return browser->GetHost()->TryCloseBrowser();
-    }
-    return true;
-  }
-
- private:
-  CefRefPtr<CefBrowserView> browser_view_;
-
-  IMPLEMENT_REFCOUNTING(PopupWindowDelegate);
-};
-
-}  // namespace
 
 CefBrowserPlatformDelegateChromeViews::CefBrowserPlatformDelegateChromeViews(
     std::unique_ptr<CefBrowserPlatformDelegateNative> native_delegate,
@@ -59,10 +21,10 @@ CefBrowserPlatformDelegateChromeViews::CefBrowserPlatformDelegateChromeViews(
 }
 
 void CefBrowserPlatformDelegateChromeViews::SetBrowserView(
-    CefRefPtr<CefBrowserViewImpl> browser_view) {
+    CefRefPtr<CefBrowserView> browser_view) {
   DCHECK(!browser_view_);
   DCHECK(browser_view);
-  browser_view_ = browser_view;
+  browser_view_ = static_cast<CefBrowserViewImpl*>(browser_view.get());
 }
 
 void CefBrowserPlatformDelegateChromeViews::WebContentsCreated(
@@ -70,6 +32,12 @@ void CefBrowserPlatformDelegateChromeViews::WebContentsCreated(
     bool owned) {
   CefBrowserPlatformDelegateChrome::WebContentsCreated(web_contents, owned);
   browser_view_->WebContentsCreated(web_contents);
+}
+
+void CefBrowserPlatformDelegateChromeViews::WebContentsDestroyed(
+    content::WebContents* web_contents) {
+  CefBrowserPlatformDelegateChrome::WebContentsDestroyed(web_contents);
+  browser_view_->WebContentsDestroyed(web_contents);
 }
 
 void CefBrowserPlatformDelegateChromeViews::BrowserCreated(
@@ -80,7 +48,7 @@ void CefBrowserPlatformDelegateChromeViews::BrowserCreated(
 
 void CefBrowserPlatformDelegateChromeViews::NotifyBrowserCreated() {
   if (auto delegate = browser_view_->delegate()) {
-    delegate->OnBrowserCreated(browser_view_, browser_);
+    delegate->OnBrowserCreated(browser_view_, browser_.get());
 
     // DevTools windows hide the notification bubble by default. However, we
     // don't currently have the ability to intercept WebContents creation via
@@ -108,7 +76,8 @@ void CefBrowserPlatformDelegateChromeViews::NotifyBrowserCreated() {
 
 void CefBrowserPlatformDelegateChromeViews::NotifyBrowserDestroyed() {
   if (browser_view_->delegate()) {
-    browser_view_->delegate()->OnBrowserDestroyed(browser_view_, browser_);
+    browser_view_->delegate()->OnBrowserDestroyed(browser_view_,
+                                                  browser_.get());
   }
 }
 
@@ -140,59 +109,6 @@ views::Widget* CefBrowserPlatformDelegateChromeViews::GetWindowWidget() const {
 CefRefPtr<CefBrowserView>
 CefBrowserPlatformDelegateChromeViews::GetBrowserView() const {
   return browser_view_.get();
-}
-
-void CefBrowserPlatformDelegateChromeViews::PopupWebContentsCreated(
-    const CefBrowserSettings& settings,
-    CefRefPtr<CefClient> client,
-    content::WebContents* new_web_contents,
-    CefBrowserPlatformDelegate* new_platform_delegate,
-    bool is_devtools) {
-  // Default popup handling may not be Views-hosted.
-  if (!new_platform_delegate->IsViewsHosted()) {
-    return;
-  }
-
-  auto* new_platform_delegate_impl =
-      static_cast<CefBrowserPlatformDelegateChromeViews*>(
-          new_platform_delegate);
-
-  CefRefPtr<CefBrowserViewDelegate> new_delegate;
-  if (browser_view_->delegate()) {
-    new_delegate = browser_view_->delegate()->GetDelegateForPopupBrowserView(
-        browser_view_.get(), settings, client, is_devtools);
-  }
-
-  // Create a new BrowserView for the popup.
-  CefRefPtr<CefBrowserViewImpl> new_browser_view =
-      CefBrowserViewImpl::CreateForPopup(settings, new_delegate);
-
-  // Associate the PlatformDelegate with the new BrowserView.
-  new_platform_delegate_impl->SetBrowserView(new_browser_view);
-}
-
-void CefBrowserPlatformDelegateChromeViews::PopupBrowserCreated(
-    CefBrowserHostBase* new_browser,
-    bool is_devtools) {
-  // Default popup handling may not be Views-hosted.
-  if (!new_browser->HasView()) {
-    return;
-  }
-
-  CefRefPtr<CefBrowserView> new_browser_view =
-      CefBrowserView::GetForBrowser(new_browser);
-  DCHECK(new_browser_view);
-
-  bool popup_handled = false;
-  if (browser_view_->delegate()) {
-    popup_handled = browser_view_->delegate()->OnPopupBrowserViewCreated(
-        browser_view_.get(), new_browser_view.get(), is_devtools);
-  }
-
-  if (!popup_handled) {
-    CefWindow::CreateTopLevelWindow(
-        new PopupWindowDelegate(new_browser_view.get()));
-  }
 }
 
 bool CefBrowserPlatformDelegateChromeViews::IsViewsHosted() const {

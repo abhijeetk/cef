@@ -2,20 +2,22 @@
 // reserved. Use of this source code is governed by a BSD-style license that
 // can be found in the LICENSE file.
 
-#include "libcef/browser/request_context_impl.h"
-#include "libcef/browser/browser_context.h"
-#include "libcef/browser/context.h"
-#include "libcef/browser/prefs/pref_helper.h"
-#include "libcef/browser/thread_util.h"
-#include "libcef/common/app_manager.h"
-#include "libcef/common/task_runner_impl.h"
-#include "libcef/common/values_impl.h"
+#include "cef/libcef/browser/request_context_impl.h"
 
 #include "base/atomic_sequence_num.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
+#include "cef/libcef/browser/browser_context.h"
+#include "cef/libcef/browser/context.h"
+#include "cef/libcef/browser/prefs/pref_helper.h"
+#include "cef/libcef/browser/thread_util.h"
+#include "cef/libcef/common/app_manager.h"
+#include "cef/libcef/common/task_runner_impl.h"
+#include "cef/libcef/common/values_impl.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/themes/theme_service.h"
+#include "chrome/browser/themes/theme_service_factory.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -50,7 +52,7 @@ class ResolveHostHelper : public network::ResolveHostClientBase {
 
     host_resolver_.set_disconnect_handler(base::BindOnce(
         &ResolveHostHelper::OnComplete, base::Unretained(this), net::ERR_FAILED,
-        net::ResolveErrorInfo(net::ERR_FAILED), absl::nullopt, absl::nullopt));
+        net::ResolveErrorInfo(net::ERR_FAILED), std::nullopt, std::nullopt));
 
     host_resolver_->ResolveHost(
         network::mojom::HostResolverHost::NewHostPortPair(
@@ -62,8 +64,8 @@ class ResolveHostHelper : public network::ResolveHostClientBase {
  private:
   void OnComplete(int result,
                   const net::ResolveErrorInfo& resolve_error_info,
-                  const absl::optional<net::AddressList>& resolved_addresses,
-                  const absl::optional<net::HostResolverEndpointResults>&
+                  const std::optional<net::AddressList>& resolved_addresses,
+                  const std::optional<net::HostResolverEndpointResults>&
                       endpoint_results_with_metadat) override {
     CEF_REQUIRE_UIT();
 
@@ -483,57 +485,6 @@ void CefRequestContextImpl::ResolveHost(
                                    this, origin, callback));
 }
 
-void CefRequestContextImpl::LoadExtension(
-    const CefString& root_directory,
-    CefRefPtr<CefDictionaryValue> manifest,
-    CefRefPtr<CefExtensionHandler> handler) {
-  GetBrowserContext(content::GetUIThreadTaskRunner({}),
-                    base::BindOnce(
-                        [](const CefString& root_directory,
-                           CefRefPtr<CefDictionaryValue> manifest,
-                           CefRefPtr<CefExtensionHandler> handler,
-                           CefRefPtr<CefRequestContextImpl> self,
-                           CefBrowserContext::Getter browser_context_getter) {
-                          auto browser_context = browser_context_getter.Run();
-                          if (browser_context) {
-                            browser_context->LoadExtension(
-                                root_directory, manifest, handler, self);
-                          }
-                        },
-                        root_directory, manifest, handler,
-                        CefRefPtr<CefRequestContextImpl>(this)));
-}
-
-bool CefRequestContextImpl::DidLoadExtension(const CefString& extension_id) {
-  CefRefPtr<CefExtension> extension = GetExtension(extension_id);
-  // GetLoaderContext() will return NULL for internal extensions.
-  return extension && IsSame(extension->GetLoaderContext());
-}
-
-bool CefRequestContextImpl::HasExtension(const CefString& extension_id) {
-  return !!GetExtension(extension_id);
-}
-
-bool CefRequestContextImpl::GetExtensions(
-    std::vector<CefString>& extension_ids) {
-  extension_ids.clear();
-
-  if (!VerifyBrowserContext()) {
-    return false;
-  }
-
-  return browser_context()->GetExtensions(extension_ids);
-}
-
-CefRefPtr<CefExtension> CefRequestContextImpl::GetExtension(
-    const CefString& extension_id) {
-  if (!VerifyBrowserContext()) {
-    return nullptr;
-  }
-
-  return browser_context()->GetExtension(extension_id);
-}
-
 CefRefPtr<CefMediaRouter> CefRequestContextImpl::GetMediaRouter(
     CefRefPtr<CefCompletionCallback> callback) {
   CefRefPtr<CefMediaRouterImpl> media_router = new CefMediaRouterImpl();
@@ -586,9 +537,6 @@ cef_content_setting_values_t CefRequestContextImpl::GetContentSetting(
     const CefString& top_level_url,
     cef_content_setting_types_t content_type) {
   // Verify that our enums match Chromium's values.
-  static_assert(static_cast<int>(CEF_CONTENT_SETTING_TYPE_NUM_TYPES) ==
-                    static_cast<int>(ContentSettingsType::NUM_TYPES),
-                "Mismatched enum found for CEF_CONTENT_SETTING_TYPE_NUM_TYPES");
   static_assert(
       static_cast<int>(CEF_CONTENT_SETTING_VALUE_NUM_VALUES) ==
           static_cast<int>(CONTENT_SETTING_NUM_SETTINGS),
@@ -634,20 +582,82 @@ void CefRequestContextImpl::SetContentSetting(
                      requesting_url, top_level_url, content_type, value));
 }
 
+void CefRequestContextImpl::SetChromeColorScheme(cef_color_variant_t variant,
+                                                 cef_color_t user_color) {
+  GetBrowserContext(
+      content::GetUIThreadTaskRunner({}),
+      base::BindOnce(&CefRequestContextImpl::SetChromeColorSchemeInternal, this,
+                     variant, user_color));
+}
+
+cef_color_variant_t CefRequestContextImpl::GetChromeColorSchemeMode() {
+  if (!VerifyBrowserContext()) {
+    return CEF_COLOR_VARIANT_SYSTEM;
+  }
+
+  const auto* theme_service =
+      ThemeServiceFactory::GetForProfile(browser_context()->AsProfile());
+  switch (theme_service->GetBrowserColorScheme()) {
+    case ThemeService::BrowserColorScheme::kSystem:
+      return CEF_COLOR_VARIANT_SYSTEM;
+    case ThemeService::BrowserColorScheme::kLight:
+      return CEF_COLOR_VARIANT_LIGHT;
+    case ThemeService::BrowserColorScheme::kDark:
+      return CEF_COLOR_VARIANT_DARK;
+  }
+
+  DCHECK(false);  // Not reached.
+  return CEF_COLOR_VARIANT_SYSTEM;
+}
+
+cef_color_t CefRequestContextImpl::GetChromeColorSchemeColor() {
+  if (!VerifyBrowserContext()) {
+    return 0;
+  }
+
+  const auto* theme_service =
+      ThemeServiceFactory::GetForProfile(browser_context()->AsProfile());
+  if (const auto& user_color = theme_service->GetUserColor()) {
+    return *user_color;
+  }
+
+  return 0;
+}
+
+cef_color_variant_t CefRequestContextImpl::GetChromeColorSchemeVariant() {
+  if (!VerifyBrowserContext()) {
+    return CEF_COLOR_VARIANT_SYSTEM;
+  }
+
+  const auto* theme_service =
+      ThemeServiceFactory::GetForProfile(browser_context()->AsProfile());
+  switch (theme_service->GetBrowserColorVariant()) {
+    case ui::mojom::BrowserColorVariant::kSystem:
+      return CEF_COLOR_VARIANT_SYSTEM;
+    case ui::mojom::BrowserColorVariant::kTonalSpot:
+      return CEF_COLOR_VARIANT_TONAL_SPOT;
+    case ui::mojom::BrowserColorVariant::kNeutral:
+      return CEF_COLOR_VARIANT_NEUTRAL;
+    case ui::mojom::BrowserColorVariant::kVibrant:
+      return CEF_COLOR_VARIANT_VIBRANT;
+    case ui::mojom::BrowserColorVariant::kExpressive:
+      return CEF_COLOR_VARIANT_EXPRESSIVE;
+  }
+
+  DCHECK(false);  // Not reached.
+  return CEF_COLOR_VARIANT_SYSTEM;
+}
+
 void CefRequestContextImpl::OnRenderFrameCreated(
     const content::GlobalRenderFrameHostId& global_id,
-    bool is_main_frame,
-    bool is_guest_view) {
-  browser_context_->OnRenderFrameCreated(this, global_id, is_main_frame,
-                                         is_guest_view);
+    bool is_main_frame) {
+  browser_context_->OnRenderFrameCreated(this, global_id, is_main_frame);
 }
 
 void CefRequestContextImpl::OnRenderFrameDeleted(
     const content::GlobalRenderFrameHostId& global_id,
-    bool is_main_frame,
-    bool is_guest_view) {
-  browser_context_->OnRenderFrameDeleted(this, global_id, is_main_frame,
-                                         is_guest_view);
+    bool is_main_frame) {
+  browser_context_->OnRenderFrameDeleted(this, global_id, is_main_frame);
 }
 
 // static
@@ -897,6 +907,81 @@ void CefRequestContextImpl::SetContentSettingInternal(
           requesting_gurl, top_level_gurl,
           static_cast<ContentSettingsType>(content_type),
           static_cast<ContentSetting>(value));
+    }
+  }
+}
+
+void CefRequestContextImpl::SetChromeColorSchemeInternal(
+    cef_color_variant_t variant,
+    cef_color_t user_color,
+    CefBrowserContext::Getter browser_context_getter) {
+  auto* browser_context = browser_context_getter.Run();
+  if (!browser_context) {
+    return;
+  }
+
+  auto* theme_service =
+      ThemeServiceFactory::GetForProfile(browser_context->AsProfile());
+
+  // Possibly set the color scheme.
+  std::optional<ThemeService::BrowserColorScheme> color_scheme;
+  switch (variant) {
+    case CEF_COLOR_VARIANT_SYSTEM:
+      color_scheme = ThemeService::BrowserColorScheme::kSystem;
+      break;
+    case CEF_COLOR_VARIANT_LIGHT:
+      color_scheme = ThemeService::BrowserColorScheme::kLight;
+      break;
+    case CEF_COLOR_VARIANT_DARK:
+      color_scheme = ThemeService::BrowserColorScheme::kDark;
+      break;
+    default:
+      break;
+  }
+
+  if (color_scheme && *color_scheme != theme_service->GetBrowserColorScheme()) {
+    // Color scheme has changed.
+    // Based on CustomizeColorSchemeModeHandler::SetColorSchemeMode.
+    theme_service->SetBrowserColorScheme(*color_scheme);
+  }
+
+  // Returns nullopt if the current color is SK_ColorTRANSPARENT.
+  const auto& current_color = theme_service->GetUserColor();
+
+  // Possibly set the user color.
+  if (user_color == 0) {
+    if (current_color) {
+      // User color is not currently transparent.
+      // Based on ThemeColorPickerHandler::SetDefaultColor.
+      theme_service->SetUserColor(SK_ColorTRANSPARENT);
+      theme_service->UseDeviceTheme(false);
+    }
+  } else {
+    ui::mojom::BrowserColorVariant ui_variant;
+    switch (variant) {
+      case CEF_COLOR_VARIANT_NEUTRAL:
+        ui_variant = ui::mojom::BrowserColorVariant::kNeutral;
+        break;
+      case CEF_COLOR_VARIANT_VIBRANT:
+        ui_variant = ui::mojom::BrowserColorVariant::kVibrant;
+        break;
+      case CEF_COLOR_VARIANT_EXPRESSIVE:
+        ui_variant = ui::mojom::BrowserColorVariant::kExpressive;
+        break;
+      case CEF_COLOR_VARIANT_SYSTEM:
+        ui_variant = ui::mojom::BrowserColorVariant::kSystem;
+        break;
+      default:
+        ui_variant = ui::mojom::BrowserColorVariant::kTonalSpot;
+        break;
+    }
+
+    if (!current_color || *current_color != user_color ||
+        ui_variant != theme_service->GetBrowserColorVariant()) {
+      // User color and/or variant has changed.
+      // Based on ThemeColorPickerHandler::SetSeedColor.
+      theme_service->SetUserColorAndBrowserColorVariant(user_color, ui_variant);
+      theme_service->UseDeviceTheme(false);
     }
   }
 }

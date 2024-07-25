@@ -2,55 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "libcef/browser/views/browser_platform_delegate_views.h"
+#include "cef/libcef/browser/views/browser_platform_delegate_views.h"
 
 #include <utility>
 
-#include "include/views/cef_window.h"
-#include "libcef/browser/alloy/alloy_browser_host_impl.h"
-#include "libcef/browser/views/browser_view_impl.h"
-#include "libcef/browser/views/menu_runner_views.h"
-
+#include "cef/libcef/browser/alloy/alloy_browser_host_impl.h"
+#include "cef/libcef/browser/views/browser_view_impl.h"
+#include "cef/libcef/browser/views/menu_runner_views.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host.h"
 #include "ui/views/widget/widget.h"
-
-namespace {
-
-// Default popup window delegate implementation.
-class PopupWindowDelegate : public CefWindowDelegate {
- public:
-  explicit PopupWindowDelegate(CefRefPtr<CefBrowserView> browser_view)
-      : browser_view_(browser_view) {}
-
-  PopupWindowDelegate(const PopupWindowDelegate&) = delete;
-  PopupWindowDelegate& operator=(const PopupWindowDelegate&) = delete;
-
-  void OnWindowCreated(CefRefPtr<CefWindow> window) override {
-    window->AddChildView(browser_view_);
-    window->Show();
-    browser_view_->RequestFocus();
-  }
-
-  void OnWindowDestroyed(CefRefPtr<CefWindow> window) override {
-    browser_view_ = nullptr;
-  }
-
-  bool CanClose(CefRefPtr<CefWindow> window) override {
-    CefRefPtr<CefBrowser> browser = browser_view_->GetBrowser();
-    if (browser) {
-      return browser->GetHost()->TryCloseBrowser();
-    }
-    return true;
-  }
-
- private:
-  CefRefPtr<CefBrowserView> browser_view_;
-
-  IMPLEMENT_REFCOUNTING(PopupWindowDelegate);
-};
-
-}  // namespace
 
 CefBrowserPlatformDelegateViews::CefBrowserPlatformDelegateViews(
     std::unique_ptr<CefBrowserPlatformDelegateNative> native_delegate,
@@ -63,10 +24,10 @@ CefBrowserPlatformDelegateViews::CefBrowserPlatformDelegateViews(
 }
 
 void CefBrowserPlatformDelegateViews::SetBrowserView(
-    CefRefPtr<CefBrowserViewImpl> browser_view) {
+    CefRefPtr<CefBrowserView> browser_view) {
   DCHECK(!browser_view_);
   DCHECK(browser_view);
-  browser_view_ = browser_view;
+  browser_view_ = static_cast<CefBrowserViewImpl*>(browser_view.get());
 }
 
 void CefBrowserPlatformDelegateViews::WebContentsCreated(
@@ -80,6 +41,7 @@ void CefBrowserPlatformDelegateViews::WebContentsCreated(
 void CefBrowserPlatformDelegateViews::WebContentsDestroyed(
     content::WebContents* web_contents) {
   CefBrowserPlatformDelegateAlloy::WebContentsDestroyed(web_contents);
+  browser_view_->WebContentsCreated(web_contents);
   native_delegate_->WebContentsDestroyed(web_contents);
 }
 
@@ -95,7 +57,7 @@ void CefBrowserPlatformDelegateViews::NotifyBrowserCreated() {
   DCHECK(browser_view_);
   DCHECK(browser_);
   if (browser_view_->delegate()) {
-    browser_view_->delegate()->OnBrowserCreated(browser_view_, browser_);
+    browser_view_->delegate()->OnBrowserCreated(browser_view_, browser_.get());
   }
 }
 
@@ -103,7 +65,8 @@ void CefBrowserPlatformDelegateViews::NotifyBrowserDestroyed() {
   DCHECK(browser_view_);
   DCHECK(browser_);
   if (browser_view_->delegate()) {
-    browser_view_->delegate()->OnBrowserDestroyed(browser_view_, browser_);
+    browser_view_->delegate()->OnBrowserDestroyed(browser_view_,
+                                                  browser_.get());
   }
 }
 
@@ -142,49 +105,6 @@ views::Widget* CefBrowserPlatformDelegateViews::GetWindowWidget() const {
 CefRefPtr<CefBrowserView> CefBrowserPlatformDelegateViews::GetBrowserView()
     const {
   return browser_view_.get();
-}
-
-void CefBrowserPlatformDelegateViews::PopupWebContentsCreated(
-    const CefBrowserSettings& settings,
-    CefRefPtr<CefClient> client,
-    content::WebContents* new_web_contents,
-    CefBrowserPlatformDelegate* new_platform_delegate,
-    bool is_devtools) {
-  DCHECK(new_platform_delegate->IsViewsHosted());
-  CefBrowserPlatformDelegateViews* new_platform_delegate_impl =
-      static_cast<CefBrowserPlatformDelegateViews*>(new_platform_delegate);
-
-  CefRefPtr<CefBrowserViewDelegate> new_delegate;
-  if (browser_view_->delegate()) {
-    new_delegate = browser_view_->delegate()->GetDelegateForPopupBrowserView(
-        browser_view_.get(), settings, client, is_devtools);
-  }
-
-  // Create a new BrowserView for the popup.
-  CefRefPtr<CefBrowserViewImpl> new_browser_view =
-      CefBrowserViewImpl::CreateForPopup(settings, new_delegate);
-
-  // Associate the PlatformDelegate with the new BrowserView.
-  new_platform_delegate_impl->SetBrowserView(new_browser_view);
-}
-
-void CefBrowserPlatformDelegateViews::PopupBrowserCreated(
-    CefBrowserHostBase* new_browser,
-    bool is_devtools) {
-  CefRefPtr<CefBrowserView> new_browser_view =
-      CefBrowserView::GetForBrowser(new_browser);
-  DCHECK(new_browser_view);
-
-  bool popup_handled = false;
-  if (browser_view_->delegate()) {
-    popup_handled = browser_view_->delegate()->OnPopupBrowserViewCreated(
-        browser_view_.get(), new_browser_view.get(), is_devtools);
-  }
-
-  if (!popup_handled) {
-    CefWindow::CreateTopLevelWindow(
-        new PopupWindowDelegate(new_browser_view.get()));
-  }
 }
 
 SkColor CefBrowserPlatformDelegateViews::GetBackgroundColor() const {
@@ -256,13 +176,13 @@ void CefBrowserPlatformDelegateViews::ViewText(const std::string& text) {
 }
 
 bool CefBrowserPlatformDelegateViews::HandleKeyboardEvent(
-    const content::NativeWebKeyboardEvent& event) {
+    const input::NativeWebKeyboardEvent& event) {
   // The BrowserView will handle accelerators.
   return browser_view_->HandleKeyboardEvent(event);
 }
 
 CefEventHandle CefBrowserPlatformDelegateViews::GetEventHandle(
-    const content::NativeWebKeyboardEvent& event) const {
+    const input::NativeWebKeyboardEvent& event) const {
   return native_delegate_->GetEventHandle(event);
 }
 

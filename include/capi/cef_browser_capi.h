@@ -33,7 +33,7 @@
 // by hand. See the translator.README.txt file in the tools directory for
 // more information.
 //
-// $hash=e7f9480661f77931890085d6c5bf23d9842212e2$
+// $hash=7c786570b1c7af912a31c6f0c3d742e8aeb38fd8$
 //
 
 #ifndef CEF_INCLUDE_CAPI_CEF_BROWSER_CAPI_H_
@@ -381,8 +381,7 @@ typedef struct _cef_browser_host_t {
 
   ///
   /// Get the default zoom level. This value will be 0.0 by default but can be
-  /// configured with the Chrome runtime. This function can only be called on
-  /// the UI thread.
+  /// configured. This function can only be called on the UI thread.
   ///
   double(CEF_CALLBACK* get_default_zoom_level)(
       struct _cef_browser_host_t* self);
@@ -908,20 +907,6 @@ typedef struct _cef_browser_host_t {
                                               const cef_size_t* max_size);
 
   ///
-  /// Returns the extension hosted in this browser or NULL if no extension is
-  /// hosted. See cef_request_context_t::LoadExtension for details.
-  ///
-  struct _cef_extension_t*(CEF_CALLBACK* get_extension)(
-      struct _cef_browser_host_t* self);
-
-  ///
-  /// Returns true (1) if this browser is hosting an extension background
-  /// script. Background hosts do not have a window and are not displayable. See
-  /// cef_request_context_t::LoadExtension for details.
-  ///
-  int(CEF_CALLBACK* is_background_host)(struct _cef_browser_host_t* self);
-
-  ///
   /// Set whether the browser's audio is muted.
   ///
   void(CEF_CALLBACK* set_audio_muted)(struct _cef_browser_host_t* self,
@@ -944,12 +929,12 @@ typedef struct _cef_browser_host_t {
 
   ///
   /// Requests the renderer to exit browser fullscreen. In most cases exiting
-  /// window fullscreen should also exit browser fullscreen. With the Alloy
-  /// runtime this function should be called in response to a user action such
-  /// as clicking the green traffic light button on MacOS
+  /// window fullscreen should also exit browser fullscreen. With Alloy style
+  /// this function should be called in response to a user action such as
+  /// clicking the green traffic light button on MacOS
   /// (cef_window_delegate_t::OnWindowFullscreenTransition callback) or pressing
-  /// the "ESC" key (cef_keyboard_handler_t::OnPreKeyEvent callback). With the
-  /// Chrome runtime these standard exit actions are handled internally but
+  /// the "ESC" key (cef_keyboard_handler_t::OnPreKeyEvent callback). With
+  /// Chrome style these standard exit actions are handled internally but
   /// new/additional user actions can use this function. Set |will_cause_resize|
   /// to true (1) if exiting browser fullscreen will cause a view resize.
   ///
@@ -959,7 +944,7 @@ typedef struct _cef_browser_host_t {
   ///
   /// Returns true (1) if a Chrome command is supported and enabled. Values for
   /// |command_id| can be found in the cef_command_ids.h file. This function can
-  /// only be called on the UI thread. Only used with the Chrome runtime.
+  /// only be called on the UI thread. Only used with Chrome style.
   ///
   int(CEF_CALLBACK* can_execute_chrome_command)(
       struct _cef_browser_host_t* self,
@@ -968,12 +953,30 @@ typedef struct _cef_browser_host_t {
   ///
   /// Execute a Chrome command. Values for |command_id| can be found in the
   /// cef_command_ids.h file. |disposition| provides information about the
-  /// intended command target. Only used with the Chrome runtime.
+  /// intended command target. Only used with Chrome style.
   ///
   void(CEF_CALLBACK* execute_chrome_command)(
       struct _cef_browser_host_t* self,
       int command_id,
       cef_window_open_disposition_t disposition);
+
+  ///
+  /// Returns true (1) if the render process associated with this browser is
+  /// currently unresponsive as indicated by a lack of input event processing
+  /// for at least 15 seconds. To receive associated state change notifications
+  /// and optionally handle an unresponsive render process implement
+  /// cef_request_handler_t::OnRenderProcessUnresponsive. This function can only
+  /// be called on the UI thread.
+  ///
+  int(CEF_CALLBACK* is_render_process_unresponsive)(
+      struct _cef_browser_host_t* self);
+
+  ///
+  /// Returns the runtime style for this browser (ALLOY or CHROME). See
+  /// cef_runtime_style_t documentation for details.
+  ///
+  cef_runtime_style_t(CEF_CALLBACK* get_runtime_style)(
+      struct _cef_browser_host_t* self);
 } cef_browser_host_t;
 
 ///

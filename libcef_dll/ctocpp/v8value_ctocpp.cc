@@ -9,10 +9,11 @@
 // implementations. See the translator.README.txt file in the tools directory
 // for more information.
 //
-// $hash=3f2600b370dd8fbcb78b1728e458584bf24358f3$
+// $hash=856fc6c190d0e3376824564155618e468764e841$
 //
 
 #include "libcef_dll/ctocpp/v8value_ctocpp.h"
+
 #include "libcef_dll/cpptoc/base_ref_counted_cpptoc.h"
 #include "libcef_dll/cpptoc/v8accessor_cpptoc.h"
 #include "libcef_dll/cpptoc/v8array_buffer_release_callback_cpptoc.h"
@@ -789,7 +790,6 @@ bool CefV8ValueCToCpp::SetValue(int index, CefRefPtr<CefV8Value> value) {
 
 NO_SANITIZE("cfi-icall")
 bool CefV8ValueCToCpp::SetValue(const CefString& key,
-                                AccessControl settings,
                                 PropertyAttribute attribute) {
   cef_v8value_t* _struct = GetStruct();
   if (CEF_MEMBER_MISSING(_struct, set_value_byaccessor)) {
@@ -801,8 +801,8 @@ bool CefV8ValueCToCpp::SetValue(const CefString& key,
   // Unverified params: key
 
   // Execute
-  int _retval = _struct->set_value_byaccessor(_struct, key.GetStruct(),
-                                              settings, attribute);
+  int _retval =
+      _struct->set_value_byaccessor(_struct, key.GetStruct(), attribute);
 
   // Return type: bool
   return _retval ? true : false;

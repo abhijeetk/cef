@@ -9,10 +9,11 @@
 // implementations. See the translator.README.txt file in the tools directory
 // for more information.
 //
-// $hash=5e87111d30f695b234fe6e0fee539e8e15453c66$
+// $hash=7b29181006cb13ebca1ba7319e778400f75bab31$
 //
 
 #include "libcef_dll/cpptoc/views/browser_view_delegate_cpptoc.h"
+
 #include "libcef_dll/cpptoc/client_cpptoc.h"
 #include "libcef_dll/ctocpp/browser_ctocpp.h"
 #include "libcef_dll/ctocpp/views/browser_view_ctocpp.h"
@@ -241,6 +242,26 @@ int CEF_CALLBACK browser_view_delegate_on_gesture_command(
       CefBrowserViewCToCpp::Wrap(browser_view), gesture_command);
 
   // Return type: bool
+  return _retval;
+}
+
+cef_runtime_style_t CEF_CALLBACK
+browser_view_delegate_get_browser_runtime_style(
+    struct _cef_browser_view_delegate_t* self) {
+  shutdown_checker::AssertNotShutdown();
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  DCHECK(self);
+  if (!self) {
+    return CEF_RUNTIME_STYLE_DEFAULT;
+  }
+
+  // Execute
+  cef_runtime_style_t _retval =
+      CefBrowserViewDelegateCppToC::Get(self)->GetBrowserRuntimeStyle();
+
+  // Return type: simple
   return _retval;
 }
 
@@ -513,6 +534,29 @@ browser_view_delegate_on_blur(struct _cef_view_delegate_t* self,
       ->OnBlur(CefViewCToCpp::Wrap(view));
 }
 
+void CEF_CALLBACK
+browser_view_delegate_on_theme_changed(struct _cef_view_delegate_t* self,
+                                       cef_view_t* view) {
+  shutdown_checker::AssertNotShutdown();
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  DCHECK(self);
+  if (!self) {
+    return;
+  }
+  // Verify param: view; type: refptr_diff
+  DCHECK(view);
+  if (!view) {
+    return;
+  }
+
+  // Execute
+  CefBrowserViewDelegateCppToC::Get(
+      reinterpret_cast<cef_browser_view_delegate_t*>(self))
+      ->OnThemeChanged(CefViewCToCpp::Wrap(view));
+}
+
 }  // namespace
 
 // CONSTRUCTOR - Do not edit by hand.
@@ -530,6 +574,8 @@ CefBrowserViewDelegateCppToC::CefBrowserViewDelegateCppToC() {
   GetStruct()->use_frameless_window_for_picture_in_picture =
       browser_view_delegate_use_frameless_window_for_picture_in_picture;
   GetStruct()->on_gesture_command = browser_view_delegate_on_gesture_command;
+  GetStruct()->get_browser_runtime_style =
+      browser_view_delegate_get_browser_runtime_style;
   GetStruct()->base.get_preferred_size =
       browser_view_delegate_get_preferred_size;
   GetStruct()->base.get_minimum_size = browser_view_delegate_get_minimum_size;
@@ -544,6 +590,7 @@ CefBrowserViewDelegateCppToC::CefBrowserViewDelegateCppToC() {
   GetStruct()->base.on_layout_changed = browser_view_delegate_on_layout_changed;
   GetStruct()->base.on_focus = browser_view_delegate_on_focus;
   GetStruct()->base.on_blur = browser_view_delegate_on_blur;
+  GetStruct()->base.on_theme_changed = browser_view_delegate_on_theme_changed;
 }
 
 // DESTRUCTOR - Do not edit by hand.

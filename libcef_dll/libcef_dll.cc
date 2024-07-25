@@ -9,7 +9,7 @@
 // implementations. See the translator.README.txt file in the tools directory
 // for more information.
 //
-// $hash=215fc5a9025e8b0cd3d1bc7259ad6e6ac53b2125$
+// $hash=4a4490df4b9440aeb853d6625fddb7de5741f5b0$
 //
 
 #include "include/capi/cef_app_capi.h"
@@ -118,15 +118,25 @@ CEF_EXPORT int cef_initialize(const cef_main_args_t* args,
   return _retval;
 }
 
+CEF_EXPORT int cef_get_exit_code() {
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Execute
+  int _retval = CefGetExitCode();
+
+  // Return type: simple
+  return _retval;
+}
+
 CEF_EXPORT void cef_shutdown() {
   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Execute
+  CefShutdown();
 
 #if DCHECK_IS_ON()
   shutdown_checker::SetIsShutdown();
 #endif
-
-  // Execute
-  CefShutdown();
 }
 
 CEF_EXPORT void cef_do_message_loop_work() {
@@ -937,4 +947,21 @@ CEF_EXPORT void cef_set_data_directory_for_tests(const cef_string_t* dir) {
 
   // Execute
   CefSetDataDirectoryForTests(CefString(dir));
+}
+
+CEF_EXPORT int cef_is_feature_enabled_for_tests(
+    const cef_string_t* feature_name) {
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Verify param: feature_name; type: string_byref_const
+  DCHECK(feature_name);
+  if (!feature_name) {
+    return 0;
+  }
+
+  // Execute
+  bool _retval = CefIsFeatureEnabledForTests(CefString(feature_name));
+
+  // Return type: bool
+  return _retval;
 }

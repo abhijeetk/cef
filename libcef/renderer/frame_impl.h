@@ -9,13 +9,12 @@
 #include <queue>
 #include <string>
 
-#include "include/cef_frame.h"
-#include "include/cef_v8.h"
-#include "libcef/renderer/blink_glue.h"
-
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
+#include "cef/include/cef_frame.h"
+#include "cef/include/cef_v8.h"
 #include "cef/libcef/common/mojom/cef.mojom.h"
+#include "cef/libcef/renderer/blink_glue.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -85,7 +84,6 @@ class CefFrameImpl
   void OnWasShown();
   void OnDidCommitProvisionalLoad();
   void OnDidFinishLoad();
-  void OnDraggableRegionsChanged();
   void OnContextCreated(v8::Local<v8::Context> context);
   void OnContextReleased();
   void OnDetached();
@@ -93,6 +91,11 @@ class CefFrameImpl
   blink::WebLocalFrame* web_frame() const { return frame_; }
 
  private:
+  // Called for draggable region changes due to navigation. This is in addition
+  // to the standard notifications delivered via
+  // WebContentsDelegate::DraggableRegionsChanged.
+  void OnDraggableRegionsChanged();
+
   // Execute an action on the associated WebLocalFrame. This will queue the
   // action if the JavaScript context is not yet created.
   using LocalFrameAction =
@@ -116,6 +119,13 @@ class CefFrameImpl
   // Called if the BrowserFrame connection attempt times out.
   void OnBrowserFrameTimeout();
 
+  // Called if the BrowserFrame connection is disconnected.
+  void OnBrowserFrameDisconnect(uint32_t custom_reason,
+                                const std::string& description);
+  // Called if the RenderFrame connection is disconnected.
+  void OnRenderFrameDisconnect(uint32_t custom_reason,
+                               const std::string& description);
+
   enum class DisconnectReason {
     DETACHED,
     BROWSER_FRAME_DETACHED,
@@ -127,7 +137,7 @@ class CefFrameImpl
   // Called if/when a disconnect occurs. This may occur due to frame navigation,
   // destruction, or insertion into the bfcache (when the browser-side frame
   // representation is destroyed and closes the connection).
-  void OnDisconnect(DisconnectReason reason);
+  void OnDisconnect(DisconnectReason reason, const std::string& description);
 
   // Send an action to the remote BrowserFrame. This will queue the action if
   // the remote frame is not yet attached.
@@ -138,7 +148,7 @@ class CefFrameImpl
   void MaybeInitializeScriptContext();
 
   // cef::mojom::RenderFrame methods:
-  void FrameAttachedAck() override;
+  void FrameAttachedAck(bool allow) override;
   void FrameDetached() override;
   void SendMessage(const std::string& name,
                    base::Value::List arguments) override;
@@ -170,6 +180,8 @@ class CefFrameImpl
   bool context_created_ = false;
   std::queue<std::pair<std::string, LocalFrameAction>> queued_context_actions_;
 
+  bool attach_denied_ = false;
+
   // Number of times that browser reconnect has been attempted.
   size_t browser_connect_retry_ct_ = 0;
 
@@ -180,6 +192,11 @@ class CefFrameImpl
     CONNECTION_ACKED,
     RECONNECT_PENDING,
   } browser_connection_state_ = ConnectionState::DISCONNECTED;
+
+  static std::string GetDisconnectDebugString(ConnectionState connection_state,
+                                              bool frame_is_valid,
+                                              DisconnectReason reason,
+                                              const std::string& description);
 
   base::OneShotTimer browser_connect_timer_;
 

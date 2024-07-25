@@ -108,7 +108,8 @@ int GetURLBarHeight(HWND hwnd) {
 
 }  // namespace
 
-RootWindowWin::RootWindowWin() {
+RootWindowWin::RootWindowWin(bool use_alloy_style)
+    : RootWindow(use_alloy_style) {
   // Create a HRGN representing the draggable window area.
   draggable_region_ = ::CreateRectRgn(0, 0, 0, 0);
 }
@@ -134,7 +135,6 @@ void RootWindowWin::Init(RootWindow::Delegate* delegate,
   with_controls_ = config->with_controls;
   always_on_top_ = config->always_on_top;
   with_osr_ = config->with_osr;
-  with_extension_ = config->window_type == WindowType::EXTENSION;
 
   CreateBrowserWindow(config->url);
 
@@ -313,11 +313,6 @@ ClientWindowHandle RootWindowWin::GetWindowHandle() const {
 bool RootWindowWin::WithWindowlessRendering() const {
   REQUIRE_MAIN_THREAD();
   return with_osr_;
-}
-
-bool RootWindowWin::WithExtension() const {
-  REQUIRE_MAIN_THREAD();
-  return with_extension_;
 }
 
 void RootWindowWin::CreateBrowserWindow(const std::string& startup_url) {
@@ -1070,8 +1065,6 @@ void RootWindowWin::OnBrowserCreated(CefRefPtr<CefBrowser> browser) {
     // Make sure the browser is sized correctly.
     OnSize(false);
   }
-
-  delegate_->OnBrowserCreated(this, browser);
 }
 
 void RootWindowWin::OnBrowserWindowDestroyed() {
@@ -1081,9 +1074,10 @@ void RootWindowWin::OnBrowserWindowDestroyed() {
 
   if (!window_destroyed_) {
     // The browser was destroyed first. This could be due to the use of
-    // off-screen rendering or execution of JavaScript window.close().
-    // Close the RootWindow.
-    Close(true);
+    // off-screen rendering or native (external) parent, or execution of
+    // JavaScript window.close(). Close the RootWindow asyncronously to allow
+    // the current call stack to unwind.
+    MAIN_POST_CLOSURE(base::BindOnce(&RootWindowWin::Close, this, true));
   }
 
   browser_destroyed_ = true;

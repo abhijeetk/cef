@@ -9,11 +9,10 @@
 #include <memory>
 #include <vector>
 
-#include "include/cef_values.h"
-#include "libcef/common/value_base.h"
-
 #include "base/threading/platform_thread.h"
 #include "base/values.h"
+#include "cef/include/cef_values.h"
+#include "cef/libcef/common/value_base.h"
 
 // CefValue implementation
 class CefValueImpl : public CefValue {
@@ -106,7 +105,7 @@ class CefValueImpl : public CefValue {
   };
 
  private:
-  void SetValueInternal(absl::optional<base::Value> value);
+  void SetValueInternal(std::optional<base::Value> value);
 
   // Returns the controller for the current value, if any.
   CefValueController* GetValueController() const;

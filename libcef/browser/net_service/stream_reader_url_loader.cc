@@ -3,10 +3,7 @@
 // source code is governed by a BSD-style license that can be found in the
 // LICENSE file.
 
-#include "libcef/browser/net_service/stream_reader_url_loader.h"
-
-#include "libcef/browser/thread_util.h"
-#include "libcef/common/net_service/net_service_util.h"
+#include "cef/libcef/browser/net_service/stream_reader_url_loader.h"
 
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -16,6 +13,8 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/threading/thread.h"
+#include "cef/libcef/browser/thread_util.h"
+#include "cef/libcef/common/net_service/net_service_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/io_buffer.h"
 #include "net/http/http_status_code.h"
@@ -475,7 +474,7 @@ StreamReaderURLLoader::StreamReaderURLLoader(
     mojo::PendingRemote<network::mojom::URLLoaderClient> client,
     mojo::PendingRemote<network::mojom::TrustedHeaderClient> header_client,
     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
-    absl::optional<mojo_base::BigBuffer> cached_metadata,
+    std::optional<mojo_base::BigBuffer> cached_metadata,
     std::unique_ptr<Delegate> response_delegate)
     : request_id_(request_id),
       request_(request),
@@ -520,13 +519,36 @@ void StreamReaderURLLoader::Start() {
         base::BindOnce(&StreamReaderURLLoader::ContinueWithRequestHeaders,
                        weak_factory_.GetWeakPtr()));
   } else {
-    ContinueWithRequestHeaders(net::OK, absl::nullopt);
+    ContinueWithRequestHeaders(net::OK, std::nullopt);
   }
+}
+
+void StreamReaderURLLoader::Continue() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  DCHECK(need_client_callback_ && !got_client_callback_);
+  got_client_callback_ = true;
+
+  writable_handle_watcher_.Watch(
+      producer_handle_.get(), MOJO_HANDLE_SIGNAL_WRITABLE,
+      base::BindRepeating(&StreamReaderURLLoader::OnDataPipeWritable,
+                          base::Unretained(this)));
+
+  ReadMore();
+}
+
+void StreamReaderURLLoader::Cancel() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  DCHECK(need_client_callback_ && !got_client_callback_);
+  got_client_callback_ = true;
+
+  CleanUp();
 }
 
 void StreamReaderURLLoader::ContinueWithRequestHeaders(
     int32_t result,
-    const absl::optional<net::HttpRequestHeaders>& headers) {
+    const std::optional<net::HttpRequestHeaders>& headers) {
   if (result != net::OK) {
     RequestComplete(result);
     return;
@@ -552,7 +574,7 @@ void StreamReaderURLLoader::FollowRedirect(
     const std::vector<std::string>& removed_headers,
     const net::HttpRequestHeaders& modified_headers,
     const net::HttpRequestHeaders& modified_cors_exempt_headers,
-    const absl::optional<GURL>& new_url) {
+    const std::optional<GURL>& new_url) {
   DCHECK(false);
 }
 
@@ -572,13 +594,8 @@ void StreamReaderURLLoader::OnInputStreamOpened(
   open_cancel_callback_.Reset();
 
   if (!input_stream) {
-    bool restarted = false;
-    response_delegate_->OnInputStreamOpenFailed(request_id_, &restarted);
-    if (restarted) {
-      // The request has been restarted with a new loader.
-      // |this| will be deleted.
-      CleanUp();
-    } else {
+    // May delete |this| iff returns true.
+    if (!response_delegate_->OnInputStreamOpenFailed(request_id_)) {
       HeadersComplete(net::HTTP_NOT_FOUND, -1);
     }
     return;
@@ -665,15 +682,15 @@ void StreamReaderURLLoader::HeadersComplete(int orig_status_code,
                        std::move(pending_response)));
   } else {
     ContinueWithResponseHeaders(std::move(pending_response), net::OK,
-                                absl::nullopt, absl::nullopt);
+                                std::nullopt, std::nullopt);
   }
 }
 
 void StreamReaderURLLoader::ContinueWithResponseHeaders(
     network::mojom::URLResponseHeadPtr pending_response,
     int32_t result,
-    const absl::optional<std::string>& headers,
-    const absl::optional<GURL>& redirect_url) {
+    const std::optional<std::string>& headers,
+    const std::optional<GURL>& redirect_url) {
   if (result != net::OK) {
     RequestComplete(result);
     return;
@@ -701,13 +718,15 @@ void StreamReaderURLLoader::ContinueWithResponseHeaders(
     pending_response->encoded_body_length = nullptr;
     const GURL new_location =
         has_redirect_url ? *redirect_url : request_.url.Resolve(location);
+
+    CleanUp();
+
+    // The client will restart the request with a new loader.
+    // May delete |this|.
     client_->OnReceiveRedirect(
         MakeRedirectInfo(request_, pending_headers.get(), new_location,
                          pending_headers->response_code()),
         std::move(pending_response));
-    // The client will restart the request with a new loader.
-    // |this| will be deleted.
-    CleanUp();
   } else {
     mojo::ScopedDataPipeConsumerHandle consumer_handle;
     if (CreateDataPipe(nullptr /*options*/, producer_handle_,
@@ -715,15 +734,13 @@ void StreamReaderURLLoader::ContinueWithResponseHeaders(
       RequestComplete(net::ERR_FAILED);
       return;
     }
-    writable_handle_watcher_.Watch(
-        producer_handle_.get(), MOJO_HANDLE_SIGNAL_WRITABLE,
-        base::BindRepeating(&StreamReaderURLLoader::OnDataPipeWritable,
-                            base::Unretained(this)));
 
+    need_client_callback_ = true;
     client_->OnReceiveResponse(std::move(pending_response),
                                std::move(consumer_handle),
                                std::move(cached_metadata_));
-    ReadMore();
+
+    // Wait for the client to call Continue() or Cancel().
   }
 }
 
@@ -809,20 +826,21 @@ void StreamReaderURLLoader::RequestComplete(int status_code) {
   // We don't support decoders, so use the same value.
   status.decoded_body_length = total_bytes_read_;
 
-  client_->OnComplete(status);
   CleanUp();
+
+  // May delete |this|.
+  client_->OnComplete(status);
 }
 
 void StreamReaderURLLoader::CleanUp() {
   DCHECK(thread_checker_.CalledOnValidThread());
 
+  weak_factory_.InvalidateWeakPtrs();
+
   // Resets the watchers and pipes, so that we will never be called back.
   writable_handle_watcher_.Cancel();
   pending_buffer_ = nullptr;
   producer_handle_.reset();
-
-  // Manages its own lifetime.
-  delete this;
 }
 
 bool StreamReaderURLLoader::ParseRange(const net::HttpRequestHeaders& headers) {

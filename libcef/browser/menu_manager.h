@@ -6,11 +6,10 @@
 #define CEF_LIBCEF_BROWSER_MENU_MANAGER_H_
 #pragma once
 
-#include "libcef/browser/menu_model_impl.h"
-
-#include "libcef/browser/menu_runner.h"
-
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "cef/libcef/browser/menu_model_impl.h"
+#include "cef/libcef/browser/menu_runner.h"
 #include "content/public/browser/context_menu_params.h"
 #include "content/public/browser/web_contents_observer.h"
 
@@ -64,7 +63,7 @@ class CefMenuManager : public CefMenuModelImpl::Delegate,
   bool IsCustomContextMenuCommand(int command_id);
 
   // AlloyBrowserHostImpl pointer is guaranteed to outlive this object.
-  AlloyBrowserHostImpl* browser_;
+  raw_ptr<AlloyBrowserHostImpl> browser_;
 
   std::unique_ptr<CefMenuRunner> runner_;
 
@@ -72,7 +71,7 @@ class CefMenuManager : public CefMenuModelImpl::Delegate,
   content::ContextMenuParams params_;
 
   // Not owned by this class.
-  CefRunContextMenuCallback* custom_menu_callback_ = nullptr;
+  raw_ptr<CefRunContextMenuCallback> custom_menu_callback_ = nullptr;
 
   // Must be the last member.
   base::WeakPtrFactory<CefMenuManager> weak_ptr_factory_;

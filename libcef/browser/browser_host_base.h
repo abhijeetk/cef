@@ -6,35 +6,37 @@
 #define CEF_LIBCEF_BROWSER_BROWSER_HOST_BASE_H_
 #pragma once
 
-#include "include/cef_browser.h"
-#include "include/cef_client.h"
-#include "include/views/cef_browser_view.h"
-#include "libcef/browser/browser_contents_delegate.h"
-#include "libcef/browser/browser_info.h"
-#include "libcef/browser/browser_platform_delegate.h"
-#include "libcef/browser/devtools/devtools_manager.h"
-#include "libcef/browser/file_dialog_manager.h"
-#include "libcef/browser/frame_host_impl.h"
-#include "libcef/browser/media_stream_registrar.h"
-#include "libcef/browser/request_context_impl.h"
-
+#include "base/memory/raw_ptr.h"
 #include "base/observer_list.h"
 #include "base/synchronization/lock.h"
-#include "extensions/common/mojom/view_type.mojom.h"
+#include "cef/include/cef_browser.h"
+#include "cef/include/cef_client.h"
+#include "cef/include/cef_unresponsive_process_callback.h"
+#include "cef/include/views/cef_browser_view.h"
+#include "cef/libcef/browser/browser_contents_delegate.h"
+#include "cef/libcef/browser/browser_info.h"
+#include "cef/libcef/browser/browser_platform_delegate.h"
+#include "cef/libcef/browser/devtools/devtools_protocol_manager.h"
+#include "cef/libcef/browser/devtools/devtools_window_runner.h"
+#include "cef/libcef/browser/file_dialog_manager.h"
+#include "cef/libcef/browser/frame_host_impl.h"
+#include "cef/libcef/browser/javascript_dialog_manager.h"
+#include "cef/libcef/browser/media_stream_registrar.h"
+#include "cef/libcef/browser/request_context_impl.h"
 
-namespace extensions {
-class Extension;
-}
+class RenderViewContextMenuObserver;
 
 // Parameters that are passed to the runtime-specific Create methods.
 struct CefBrowserCreateParams {
   CefBrowserCreateParams() = default;
 
-  // Copy constructor used with the chrome runtime only.
+  // Copy constructor used with Chrome style only.
   CefBrowserCreateParams(const CefBrowserCreateParams& that) {
     operator=(that);
   }
   CefBrowserCreateParams& operator=(const CefBrowserCreateParams& that) {
+    DCHECK(that.IsChromeStyle());
+
     // Not all parameters can be copied.
     client = that.client;
     url = that.url;
@@ -42,17 +44,32 @@ struct CefBrowserCreateParams {
     request_context = that.request_context;
     extra_info = that.extra_info;
     if (that.window_info) {
-      MaybeSetWindowInfo(*that.window_info);
+      MaybeSetWindowInfo(*that.window_info, /*allow_alloy_style=*/false,
+                         /*allow_chrome_style=*/true);
     }
     browser_view = that.browser_view;
     return *this;
   }
 
+  // Initialize |window_info| with expected defaults before passing to a client
+  // callback. |opener| will be non-nullptr for popups, DevTools windows, etc.
+  static void InitWindowInfo(CefWindowInfo* window_info,
+                             CefBrowserHostBase* opener);
+
   // Set |window_info| if appropriate (see below).
-  void MaybeSetWindowInfo(const CefWindowInfo& window_info);
+  void MaybeSetWindowInfo(const CefWindowInfo& window_info,
+                          bool allow_alloy_style,
+                          bool allow_chrome_style);
+
+  // Returns true if |window_info| indicates creation of a Chrome style window.
+  static bool IsChromeStyle(const CefWindowInfo* window_info);
+  bool IsChromeStyle() const;
+
+  // Returns true if parameters indicate windowless (off-screen) rendering.
+  bool IsWindowless() const;
 
   // Platform-specific window creation info. Will be nullptr for Views-hosted
-  // browsers except when using the Chrome runtime with a native parent handle.
+  // browsers except when using Chrome style with a native parent handle.
   std::unique_ptr<CefWindowInfo> window_info;
 
   // The BrowserView that will own a Views-hosted browser. Will be nullptr for
@@ -64,6 +81,10 @@ struct CefBrowserCreateParams {
   // PopupWebContentsCreated).
   bool popup_with_views_hosted_opener = false;
 
+  // True if this browser is a popup and has an Alloy style opener. Only used
+  // with Chrome style.
+  bool popup_with_alloy_style_opener = false;
+
   // Client implementation. May be nullptr.
   CefRefPtr<CefClient> client;
 
@@ -74,10 +95,6 @@ struct CefBrowserCreateParams {
   // Browser settings.
   CefBrowserSettings settings;
 
-  // Other browser that opened this DevTools browser. Will be nullptr for non-
-  // DevTools browsers. Currently used with the alloy runtime only.
-  CefRefPtr<CefBrowserHostBase> devtools_opener;
-
   // Request context to use when creating the browser. If nullptr the global
   // request context will be used.
   CefRefPtr<CefRequestContext> request_context;
@@ -85,34 +102,10 @@ struct CefBrowserCreateParams {
   // Extra information that will be passed to
   // CefRenderProcessHandler::OnBrowserCreated.
   CefRefPtr<CefDictionaryValue> extra_info;
-
-  // Used when explicitly creating the browser as an extension host via
-  // ProcessManager::CreateBackgroundHost. Currently used with the alloy
-  // runtime only.
-  const extensions::Extension* extension = nullptr;
-  extensions::mojom::ViewType extension_host_type =
-      extensions::mojom::ViewType::kInvalid;
-};
-
-// Parameters passed to ShowDevToolsOnUIThread().
-struct CefShowDevToolsParams {
-  CefShowDevToolsParams(const CefWindowInfo& windowInfo,
-                        CefRefPtr<CefClient> client,
-                        const CefBrowserSettings& settings,
-                        const CefPoint& inspect_element_at)
-      : window_info_(windowInfo),
-        client_(client),
-        settings_(settings),
-        inspect_element_at_(inspect_element_at) {}
-
-  CefWindowInfo window_info_;
-  CefRefPtr<CefClient> client_;
-  CefBrowserSettings settings_;
-  CefPoint inspect_element_at_;
 };
 
 // Base class for CefBrowserHost implementations. Includes functionality that is
-// shared by the alloy and chrome runtimes. All methods are thread-safe unless
+// shared by Alloy and Chrome styles. All methods are thread-safe unless
 // otherwise indicated.
 class CefBrowserHostBase : public CefBrowserHost,
                            public CefBrowser,
@@ -135,6 +128,11 @@ class CefBrowserHostBase : public CefBrowserHost,
   static CefRefPtr<CefBrowserHostBase> Create(
       CefBrowserCreateParams& create_params);
 
+  // Safe conversion from CefBrowserHostBase to CefBrowserHostBase.
+  // Use this method instead of static_cast.
+  static CefRefPtr<CefBrowserHostBase> FromBrowser(
+      CefRefPtr<CefBrowser> browser);
+
   // Returns the browser associated with the specified RenderViewHost.
   static CefRefPtr<CefBrowserHostBase> GetBrowserForHost(
       const content::RenderViewHost* host);
@@ -153,6 +151,8 @@ class CefBrowserHostBase : public CefBrowserHost,
   // Returns the browser associated with the specified top-level window.
   static CefRefPtr<CefBrowserHostBase> GetBrowserForTopLevelNativeWindow(
       gfx::NativeWindow owning_window);
+  // Returns the browser associated with the specified browser ID.
+  static CefRefPtr<CefBrowserHostBase> GetBrowserForBrowserId(int browser_id);
 
   // Returns the browser most likely to be focused. This may be somewhat iffy
   // with windowless browsers as there is no guarantee that the client has only
@@ -180,9 +180,32 @@ class CefBrowserHostBase : public CefBrowserHost,
   // the UI thread only.
   virtual bool WillBeDestroyed() const = 0;
 
-  // Called on the UI thread after the associated WebContents is destroyed.
-  // Also called from CefBrowserInfoManager::DestroyAllBrowsers if the browser
-  // was not properly shut down.
+  // Called on the UI thread to complete WebContents tear-down. In most cases
+  // this will be called via WebContentsObserver::WebContentsDestroyed. Any
+  // remaining objects that reference the WebContents (including RFH, etc)
+  // should be cleared in this callback.
+  virtual void DestroyWebContents(content::WebContents* web_contents);
+
+  // Called on the UI thread to complete CefBrowserHost tear-down.
+  //
+  // With Chrome style the WebContents is owned by the Browser's TabStripModel
+  // and will usually be destroyed first: CloseBrowser -> (async) DoCloseBrowser
+  // -> [TabStripModel deletes the WebContents] -> OnWebContentsDestroyed ->
+  // DestroyWebContents -> (async) DestroyBrowser.
+  //
+  // With Alloy style the WebContents is owned by the
+  // CefBrowserPlatformDelegateAlloy and will usually be destroyed at the same
+  // time: CloseBrowser -> [OS/platform logic] -> (async) DestroyBrowser ->
+  // [CefBrowserPlatformDelegateAlloy deletes the WebContents]
+  // -> WebContentsDestroyed -> DestoyWebContents.
+  //
+  // There are a few exceptions to the above rules:
+  // 1. If the CefBrowserHost still exists at CefShutdown, in which case
+  //    DestroyBrowser will be called first via
+  //    CefBrowserInfoManager::DestroyAllBrowsers.
+  // 2. If a popup WebContents is still pending when the parent WebContents is
+  //    destroyed, in which case WebContentsDestroyed will be called first via
+  //    the parent WebContents destructor.
   virtual void DestroyBrowser();
 
   // CefBrowserHost methods:
@@ -215,6 +238,8 @@ class CefBrowserHostBase : public CefBrowserHost,
                     CefRefPtr<CefClient> client,
                     const CefBrowserSettings& settings,
                     const CefPoint& inspect_element_at) override;
+  void CloseDevTools() override;
+  bool HasDevTools() override;
   void ReplaceMisspelling(const CefString& word) override;
   void AddWordToDictionary(const CefString& word) override;
   void SendKeyEvent(const CefKeyEvent& event) override;
@@ -238,6 +263,8 @@ class CefBrowserHostBase : public CefBrowserHost,
   void NotifyMoveOrResizeStarted() override;
   bool IsFullscreen() override;
   void ExitFullscreen(bool will_cause_resize) override;
+  bool IsRenderProcessUnresponsive() override;
+  cef_runtime_style_t GetRuntimeStyle() override;
 
   // CefBrowser methods:
   bool IsValid() override;
@@ -268,7 +295,8 @@ class CefBrowserHostBase : public CefBrowserHost,
   void OnStateChanged(CefBrowserContentsState state_changed) override;
   void OnWebContentsDestroyed(content::WebContents* web_contents) override;
 
-  // Returns the frame associated with the specified RenderFrameHost.
+  // Returns the frame object matching the specified |host| or nullptr if no
+  // match is found. Must be called on the UI thread.
   CefRefPtr<CefFrame> GetFrameForHost(const content::RenderFrameHost* host);
 
   // Returns the frame associated with the specified global ID/token. See
@@ -306,9 +334,12 @@ class CefBrowserHostBase : public CefBrowserHost,
                      void* params);
   void SelectFileListenerDestroyed(ui::SelectFileDialog::Listener* listener);
 
+  // Called from AlloyBrowserHostImpl::GetJavaScriptDialogManager and
+  // ChromeBrowserDelegate::GetJavaScriptDialogManager.
+  content::JavaScriptDialogManager* GetJavaScriptDialogManager();
+
   // Called from CefBrowserInfoManager::MaybeAllowNavigation.
   virtual bool MaybeAllowNavigation(content::RenderFrameHost* opener,
-                                    bool is_guest_view,
                                     const content::OpenURLParams& params);
 
   // Helpers for executing client callbacks. Must be called on the UI thread.
@@ -328,7 +359,11 @@ class CefBrowserHostBase : public CefBrowserHost,
   SkColor GetBackgroundColor() const;
 
   // Returns true if windowless rendering is enabled.
-  virtual bool IsWindowless() const;
+  virtual bool IsWindowless() const = 0;
+
+  // Returns the runtime style of this browser.
+  virtual bool IsAlloyStyle() const = 0;
+  bool IsChromeStyle() const { return !IsAlloyStyle(); }
 
   // Accessors that must be called on the UI thread.
   content::WebContents* GetWebContents() const;
@@ -336,10 +371,27 @@ class CefBrowserHostBase : public CefBrowserHost,
   CefBrowserPlatformDelegate* platform_delegate() const {
     return platform_delegate_.get();
   }
-  CefBrowserContentsDelegate* contents_delegate() const {
-    return contents_delegate_.get();
+  CefBrowserContentsDelegate* contents_delegate() {
+    return &contents_delegate_;
   }
   CefMediaStreamRegistrar* GetMediaStreamRegistrar();
+  CefDevToolsWindowRunner* GetDevToolsWindowRunner();
+
+  CefRefPtr<CefUnresponsiveProcessCallback> unresponsive_process_callback()
+      const {
+    return unresponsive_process_callback_;
+  }
+  void set_unresponsive_process_callback(
+      CefRefPtr<CefUnresponsiveProcessCallback> callback) {
+    unresponsive_process_callback_ = callback;
+  }
+
+  RenderViewContextMenuObserver* context_menu_observer() const {
+    return context_menu_observer_;
+  }
+  void set_context_menu_observer(RenderViewContextMenuObserver* observer) {
+    context_menu_observer_ = observer;
+  }
 
   // Returns the Widget owner for the browser window. Only used with windowed
   // browsers.
@@ -367,7 +419,7 @@ class CefBrowserHostBase : public CefBrowserHost,
   virtual bool IsVisible() const;
 
  protected:
-  bool EnsureDevToolsManager();
+  bool EnsureDevToolsProtocolManager();
   void InitializeDevToolsRegistrationOnUIThread(
       CefRefPtr<CefRegistration> registration);
 
@@ -375,8 +427,7 @@ class CefBrowserHostBase : public CefBrowserHost,
   virtual bool Navigate(const content::OpenURLParams& params);
 
   // Called from ShowDevTools to perform the actual show.
-  virtual void ShowDevToolsOnUIThread(
-      std::unique_ptr<CefShowDevToolsParams> params) = 0;
+  void ShowDevToolsOnUIThread(std::unique_ptr<CefShowDevToolsParams> params);
 
   // Create the CefFileDialogManager if it doesn't already exist.
   bool EnsureFileDialogManager();
@@ -390,7 +441,9 @@ class CefBrowserHostBase : public CefBrowserHost,
   const bool is_views_hosted_;
 
   // Only accessed on the UI thread.
-  std::unique_ptr<CefBrowserContentsDelegate> contents_delegate_;
+  CefBrowserContentsDelegate contents_delegate_;
+  CefRefPtr<CefUnresponsiveProcessCallback> unresponsive_process_callback_;
+  raw_ptr<RenderViewContextMenuObserver> context_menu_observer_ = nullptr;
 
   // Observers that want to be notified of changes to this object.
   // Only accessed on the UI thread.
@@ -398,6 +451,9 @@ class CefBrowserHostBase : public CefBrowserHost,
 
   // Used for creating and managing file dialogs.
   std::unique_ptr<CefFileDialogManager> file_dialog_manager_;
+
+  // Used for creating and managing JavaScript dialogs.
+  std::unique_ptr<CefJavaScriptDialogManager> javascript_dialog_manager_;
 
   // Volatile state accessed from multiple threads. All access must be protected
   // by |state_lock_|.
@@ -409,8 +465,11 @@ class CefBrowserHostBase : public CefBrowserHost,
   bool is_fullscreen_ = false;
   CefRefPtr<CefFrameHostImpl> focused_frame_;
 
-  // Used for creating and managing DevTools instances.
-  std::unique_ptr<CefDevToolsManager> devtools_manager_;
+  // Used for managing DevTools instances without a frontend.
+  std::unique_ptr<CefDevToolsProtocolManager> devtools_protocol_manager_;
+
+  // Used for creating and running the DevTools window frontend.
+  std::unique_ptr<CefDevToolsWindowRunner> devtools_window_runner_;
 
   std::unique_ptr<CefMediaStreamRegistrar> media_stream_registrar_;
 

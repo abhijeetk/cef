@@ -8,13 +8,12 @@
 
 #include <map>
 
-#include "include/views/cef_window.h"
-#include "include/views/cef_window_delegate.h"
-
-#include "libcef/browser/menu_model_impl.h"
-#include "libcef/browser/views/panel_impl.h"
-#include "libcef/browser/views/window_view.h"
-
+#include "base/memory/raw_ptr.h"
+#include "cef/include/views/cef_window.h"
+#include "cef/include/views/cef_window_delegate.h"
+#include "cef/libcef/browser/menu_model_impl.h"
+#include "cef/libcef/browser/views/panel_impl.h"
+#include "cef/libcef/browser/views/window_view.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/widget/widget.h"
@@ -91,6 +90,9 @@ class CefWindowImpl
                       bool high_priority) override;
   void RemoveAccelerator(int command_id) override;
   void RemoveAllAccelerators() override;
+  void SetThemeColor(int color_id, cef_color_t color) override;
+  void ThemeChanged() override;
+  cef_runtime_style_t GetRuntimeStyle() override;
 
   // CefViewAdapter methods:
   void Detach() override;
@@ -151,7 +153,7 @@ class CefWindowImpl
   // Initialize the Widget.
   void CreateWidget(gfx::AcceleratedWidget parent_widget);
 
-  views::Widget* widget_ = nullptr;
+  raw_ptr<views::Widget> widget_ = nullptr;
 
   // True if the window has been initialized.
   bool initialized_ = false;

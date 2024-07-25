@@ -2,11 +2,10 @@
 // reserved. Use of this source code is governed by a BSD-style license that
 // can be found in the LICENSE file.
 
-#include "libcef/browser/printing/print_util.h"
-
-#include "libcef/browser/thread_util.h"
+#include "cef/libcef/browser/printing/print_util.h"
 
 #include "base/files/file_util.h"
+#include "cef/libcef/browser/thread_util.h"
 #include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/printing/print_view_manager_common.h"
 #include "components/printing/browser/print_to_pdf/pdf_print_utils.h"
@@ -65,7 +64,7 @@ void PrintToPDF(content::WebContents* web_contents,
   const bool display_header_footer = !!settings.display_header_footer;
 
   // Defaults to no header/footer.
-  absl::optional<std::string> header_template, footer_template;
+  std::optional<std::string> header_template, footer_template;
   if (display_header_footer) {
     if (settings.header_template.length > 0) {
       header_template = CefString(&settings.header_template);
@@ -76,20 +75,20 @@ void PrintToPDF(content::WebContents* web_contents,
   }
 
   // Defaults to 1.0.
-  absl::optional<double> scale;
+  std::optional<double> scale;
   if (settings.scale > 0) {
     scale = settings.scale;
   }
 
   // Defaults to letter size.
-  absl::optional<double> paper_width, paper_height;
+  std::optional<double> paper_width, paper_height;
   if (settings.paper_width > 0 && settings.paper_height > 0) {
     paper_width = settings.paper_width;
     paper_height = settings.paper_height;
   }
 
   // Defaults to kDefaultMarginInInches.
-  absl::optional<double> margin_top, margin_bottom, margin_left, margin_right;
+  std::optional<double> margin_top, margin_bottom, margin_left, margin_right;
   if (settings.margin_type == PDF_PRINT_MARGIN_NONE) {
     margin_top = 0;
     margin_bottom = 0;

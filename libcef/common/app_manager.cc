@@ -2,19 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "libcef/common/app_manager.h"
-
-#include "libcef/common/net/scheme_info.h"
-#include "libcef/common/net/scheme_registration.h"
-#include "libcef/common/scheme_registrar_impl.h"
+#include "cef/libcef/common/app_manager.h"
 
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "cef/libcef/common/net/scheme_info.h"
+#include "cef/libcef/common/scheme_registrar_impl.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/common/content_switches.h"
 
 #if BUILDFLAG(IS_WIN)
 #include <windows.h>
+
 #include "base/path_service.h"
 #endif
 
@@ -87,8 +86,6 @@ void CefAppManager::AddAdditionalSchemes(
     application->OnRegisterCustomSchemes(&schemeRegistrar);
     schemeRegistrar.GetSchemes(schemes);
   }
-
-  scheme::AddInternalSchemes(schemes);
 
   scheme_info_list_locked_ = true;
 }

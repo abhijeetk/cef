@@ -9,7 +9,7 @@
 // implementations. See the translator.README.txt file in the tools directory
 // for more information.
 //
-// $hash=ffa207a19ab4e538ce2f6071584c56c82233921c$
+// $hash=50ace2b6a45a23d4ff5d9a91ab7c37a893f7e0b4$
 //
 
 #ifndef CEF_LIBCEF_DLL_CTOCPP_VIEWS_WINDOW_DELEGATE_CTOCPP_H_
@@ -56,6 +56,7 @@ class CefWindowDelegateCToCpp
   bool WithStandardWindowButtons(CefRefPtr<CefWindow> window) override;
   bool GetTitlebarHeight(CefRefPtr<CefWindow> window,
                          float* titlebar_height) override;
+  cef_state_t AcceptsFirstMouse(CefRefPtr<CefWindow> window) override;
   bool CanResize(CefRefPtr<CefWindow> window) override;
   bool CanMaximize(CefRefPtr<CefWindow> window) override;
   bool CanMinimize(CefRefPtr<CefWindow> window) override;
@@ -63,6 +64,9 @@ class CefWindowDelegateCToCpp
   bool OnAccelerator(CefRefPtr<CefWindow> window, int command_id) override;
   bool OnKeyEvent(CefRefPtr<CefWindow> window,
                   const CefKeyEvent& event) override;
+  void OnThemeColorsChanged(CefRefPtr<CefWindow> window,
+                            bool chrome_theme) override;
+  cef_runtime_style_t GetWindowRuntimeStyle() override;
 
   // CefPanelDelegate methods.
 
@@ -82,6 +86,7 @@ class CefWindowDelegateCToCpp
                        const CefRect& new_bounds) override;
   void OnFocus(CefRefPtr<CefView> view) override;
   void OnBlur(CefRefPtr<CefView> view) override;
+  void OnThemeChanged(CefRefPtr<CefView> view) override;
 };
 
 #endif  // CEF_LIBCEF_DLL_CTOCPP_VIEWS_WINDOW_DELEGATE_CTOCPP_H_

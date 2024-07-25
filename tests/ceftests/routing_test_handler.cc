@@ -3,6 +3,7 @@
 // can be found in the LICENSE file.
 
 #include "tests/ceftests/routing_test_handler.h"
+
 #include "tests/shared/renderer/client_app_renderer.h"
 
 using client::ClientAppRenderer;
@@ -78,7 +79,9 @@ void RoutingTestHandler::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
 
 void RoutingTestHandler::OnRenderProcessTerminated(
     CefRefPtr<CefBrowser> browser,
-    TerminationStatus status) {
+    TerminationStatus status,
+    int error_code,
+    const CefString& error_string) {
   message_router_->OnRenderProcessTerminated(browser);
 }
 

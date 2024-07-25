@@ -437,7 +437,7 @@ class HistoryNavTestHandler : public TestHandler {
       CefRefPtr<CefFrame> frame,
       CefRefPtr<CefRequest> request,
       CefRefPtr<CefCallback> callback) override {
-    if (IsChromeRuntimeEnabled() && request->GetResourceType() == RT_FAVICON) {
+    if (request->GetResourceType() == RT_FAVICON) {
       // Ignore favicon requests.
       return RV_CANCEL;
     }
@@ -926,7 +926,7 @@ class RedirectTestHandler : public TestHandler {
       CefRefPtr<CefFrame> frame,
       CefRefPtr<CefRequest> request,
       CefRefPtr<CefCallback> callback) override {
-    if (IsChromeRuntimeEnabled() && request->GetResourceType() == RT_FAVICON) {
+    if (request->GetResourceType() == RT_FAVICON) {
       // Ignore favicon requests.
       return RV_CANCEL;
     }
@@ -1543,7 +1543,7 @@ class OrderNavTestHandler : public TestHandler {
       CefRefPtr<CefFrame> frame,
       CefRefPtr<CefRequest> request,
       CefRefPtr<CefCallback> callback) override {
-    if (IsChromeRuntimeEnabled() && request->GetResourceType() == RT_FAVICON) {
+    if (request->GetResourceType() == RT_FAVICON) {
       // Ignore favicon requests.
       return RV_CANCEL;
     }
@@ -1903,7 +1903,7 @@ class LoadNavTestHandler : public TestHandler {
   }
 
   cef_transition_type_t ExpectedOpenURLTransitionType() const {
-    if (mode_ != LEFT_CLICK && IsChromeRuntimeEnabled()) {
+    if (mode_ != LEFT_CLICK && !use_alloy_style_browser()) {
       // Because we triggered the navigation with LoadURL in OnOpenURLFromTab.
       return kTransitionExplicitLoad;
     }
@@ -1918,8 +1918,8 @@ class LoadNavTestHandler : public TestHandler {
     EXPECT_EQ(RT_MAIN_FRAME, request->GetResourceType());
     if (mode_ == LOAD || IsInitialUrl(request->GetURL())) {
       EXPECT_EQ(kTransitionExplicitLoad, request->GetTransitionType());
-      if (IsChromeRuntimeEnabled()) {
-        // With the Chrome runtime this is true on initial navigation via
+      if (!use_alloy_style_browser()) {
+        // With Chrome style this is true on initial navigation via
         // chrome::AddTabAt()
         EXPECT_EQ(user_gesture, IsInitialUrl(request->GetURL()));
       } else {
@@ -1971,9 +1971,9 @@ class LoadNavTestHandler : public TestHandler {
 
     got_open_url_from_tab_.yes();
 
-    if (!cancel_in_open_url_ && IsChromeRuntimeEnabled()) {
-      // The chrome runtime may create a new popup window, which is not the
-      // behavior that this test expects. Instead, match the alloy runtime
+    if (!cancel_in_open_url_ && !use_alloy_style_browser()) {
+      // Chrome style may create a new popup window, which is not the
+      // behavior that this test expects. Instead, match Alloy style
       // behavior by navigating in the current window.
       browser->GetMainFrame()->LoadURL(target_url);
       return true;
@@ -1987,7 +1987,7 @@ class LoadNavTestHandler : public TestHandler {
       CefRefPtr<CefFrame> frame,
       CefRefPtr<CefRequest> request,
       CefRefPtr<CefCallback> callback) override {
-    if (IsChromeRuntimeEnabled() && request->GetResourceType() == RT_FAVICON) {
+    if (request->GetResourceType() == RT_FAVICON) {
       // Ignore favicon requests.
       return RV_CANCEL;
     }

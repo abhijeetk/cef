@@ -2,7 +2,7 @@
 // reserved. Use of this source code is governed by a BSD-style license that can
 // be found in the LICENSE file.
 
-#include "libcef/renderer/frame_impl.h"
+#include "cef/libcef/renderer/frame_impl.h"
 
 #include "build/build_config.h"
 
@@ -17,23 +17,22 @@
 #endif
 #endif
 
-#include "include/cef_urlrequest.h"
-#include "libcef/common/app_manager.h"
-#include "libcef/common/frame_util.h"
-#include "libcef/common/net/http_header_utils.h"
-#include "libcef/common/process_message_impl.h"
-#include "libcef/common/process_message_smr_impl.h"
-#include "libcef/common/request_impl.h"
-#include "libcef/common/string_util.h"
-#include "libcef/renderer/blink_glue.h"
-#include "libcef/renderer/browser_impl.h"
-#include "libcef/renderer/dom_document_impl.h"
-#include "libcef/renderer/render_frame_util.h"
-#include "libcef/renderer/thread_util.h"
-#include "libcef/renderer/v8_impl.h"
-
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "cef/include/cef_urlrequest.h"
+#include "cef/libcef/common/app_manager.h"
+#include "cef/libcef/common/frame_util.h"
+#include "cef/libcef/common/net/http_header_utils.h"
+#include "cef/libcef/common/process_message_impl.h"
+#include "cef/libcef/common/process_message_smr_impl.h"
+#include "cef/libcef/common/request_impl.h"
+#include "cef/libcef/common/string_util.h"
+#include "cef/libcef/renderer/blink_glue.h"
+#include "cef/libcef/renderer/browser_impl.h"
+#include "cef/libcef/renderer/dom_document_impl.h"
+#include "cef/libcef/renderer/render_frame_util.h"
+#include "cef/libcef/renderer/thread_util.h"
+#include "cef/libcef/renderer/v8_impl.h"
 #include "content/renderer/render_frame_impl.h"
 #include "third_party/blink/public/mojom/frame/frame.mojom-blink.h"
 #include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink.h"
@@ -358,9 +357,8 @@ void CefFrameImpl::OnDidFinishLoad() {
 }
 
 void CefFrameImpl::OnDraggableRegionsChanged() {
-  // Match the behavior in ChromeRenderFrameObserver::DraggableRegionsChanged.
   // Only the main frame is allowed to control draggable regions, to avoid other
-  // frames manipulate the regions in the browser process.
+  // frames trying to manipulate the regions in the browser process.
   if (frame_->Parent() != nullptr) {
     return;
   }
@@ -373,17 +371,17 @@ void CefFrameImpl::OnDraggableRegionsChanged() {
 
     regions.reserve(webregions.size());
     for (const auto& webregion : webregions) {
-      auto region = cef::mojom::DraggableRegionEntry::New(webregion.bounds,
-                                                          webregion.draggable);
-      render_frame->ConvertViewportToWindow(&region->bounds);
-      regions.push_back(std::move(region));
+      auto region = cef::mojom::DraggableRegionEntry::New(
+          render_frame->ConvertViewportToWindow(webregion.bounds),
+          webregion.draggable);
+      regions.emplace_back(std::move(region));
     }
   }
 
   using RegionsArg =
-      absl::optional<std::vector<cef::mojom::DraggableRegionEntryPtr>>;
+      std::optional<std::vector<cef::mojom::DraggableRegionEntryPtr>>;
   RegionsArg regions_arg =
-      regions.empty() ? absl::nullopt : absl::make_optional(std::move(regions));
+      regions.empty() ? std::nullopt : std::make_optional(std::move(regions));
 
   SendToBrowserFrame(
       __FUNCTION__,
@@ -422,7 +420,7 @@ void CefFrameImpl::OnDetached() {
   browser_->FrameDetached(frame_);
   frame_ = nullptr;
 
-  OnDisconnect(DisconnectReason::DETACHED);
+  OnDisconnect(DisconnectReason::DETACHED, std::string());
 
   browser_ = nullptr;
 
@@ -486,11 +484,13 @@ void CefFrameImpl::ConnectBrowserFrame(ConnectReason reason) {
   // Don't attempt to connect an invalid or bfcache'd frame. If a bfcache'd
   // frame returns to active status a reconnect will be triggered via
   // OnWasShown().
-  if (!frame_ || blink_glue::IsInBackForwardCache(frame_)) {
+  if (!frame_ || attach_denied_ || blink_glue::IsInBackForwardCache(frame_)) {
     browser_connection_state_ = ConnectionState::DISCONNECTED;
     browser_connect_timer_.Stop();
     VLOG(1) << frame_debug_str_ << " connection retry canceled (reason="
-            << (frame_ ? "BFCACHED" : "INVALID") << ")";
+            << (frame_ ? (attach_denied_ ? "ATTACH_DENIED" : "BFCACHED")
+                       : "INVALID")
+            << ")";
     return;
   }
 
@@ -511,9 +511,8 @@ void CefFrameImpl::ConnectBrowserFrame(ConnectReason reason) {
   // connection.
   browser_frame->FrameAttached(receiver_.BindNewPipeAndPassRemote(),
                                reattached);
-  receiver_.set_disconnect_handler(
-      base::BindOnce(&CefFrameImpl::OnDisconnect, this,
-                     DisconnectReason::RENDER_FRAME_DISCONNECT));
+  receiver_.set_disconnect_with_reason_handler(
+      base::BindOnce(&CefFrameImpl::OnRenderFrameDisconnect, this));
 }
 
 const mojo::Remote<cef::mojom::BrowserFrame>& CefFrameImpl::GetBrowserFrame(
@@ -527,9 +526,8 @@ const mojo::Remote<cef::mojom::BrowserFrame>& CefFrameImpl::GetBrowserFrame(
       // Triggers creation of a CefBrowserFrame in the browser process.
       render_frame->GetBrowserInterfaceBroker()->GetInterface(
           browser_frame_.BindNewPipeAndPassReceiver());
-      browser_frame_.set_disconnect_handler(
-          base::BindOnce(&CefFrameImpl::OnDisconnect, this,
-                         DisconnectReason::BROWSER_FRAME_DISCONNECT));
+      browser_frame_.set_disconnect_with_reason_handler(
+          base::BindOnce(&CefFrameImpl::OnBrowserFrameDisconnect, this));
     }
   }
   return browser_frame_;
@@ -537,10 +535,73 @@ const mojo::Remote<cef::mojom::BrowserFrame>& CefFrameImpl::GetBrowserFrame(
 
 void CefFrameImpl::OnBrowserFrameTimeout() {
   LOG(ERROR) << frame_debug_str_ << " connection timeout";
-  OnDisconnect(DisconnectReason::CONNECT_TIMEOUT);
+  OnDisconnect(DisconnectReason::CONNECT_TIMEOUT, std::string());
 }
 
-void CefFrameImpl::OnDisconnect(DisconnectReason reason) {
+void CefFrameImpl::OnBrowserFrameDisconnect(uint32_t custom_reason,
+                                            const std::string& description) {
+  OnDisconnect(DisconnectReason::BROWSER_FRAME_DISCONNECT, description);
+}
+
+void CefFrameImpl::OnRenderFrameDisconnect(uint32_t custom_reason,
+                                           const std::string& description) {
+  OnDisconnect(DisconnectReason::RENDER_FRAME_DISCONNECT, description);
+}
+
+// static
+std::string CefFrameImpl::GetDisconnectDebugString(
+    ConnectionState connection_state,
+    bool frame_is_valid,
+    DisconnectReason reason,
+    const std::string& description) {
+  std::string reason_str;
+  switch (reason) {
+    case DisconnectReason::DETACHED:
+      reason_str = "DETACHED";
+      break;
+    case DisconnectReason::BROWSER_FRAME_DETACHED:
+      reason_str = "BROWSER_FRAME_DETACHED";
+      break;
+    case DisconnectReason::CONNECT_TIMEOUT:
+      reason_str = "CONNECT_TIMEOUT";
+      break;
+    case DisconnectReason::RENDER_FRAME_DISCONNECT:
+      reason_str = "RENDER_FRAME_DISCONNECT";
+      break;
+    case DisconnectReason::BROWSER_FRAME_DISCONNECT:
+      reason_str = "BROWSER_FRAME_DISCONNECT";
+      break;
+  };
+
+  std::string state_str;
+  switch (connection_state) {
+    case ConnectionState::DISCONNECTED:
+      state_str = "DISCONNECTED";
+      break;
+    case ConnectionState::CONNECTION_PENDING:
+      state_str = "CONNECTION_PENDING";
+      break;
+    case ConnectionState::CONNECTION_ACKED:
+      state_str = "CONNECTION_ACKED";
+      break;
+    case ConnectionState::RECONNECT_PENDING:
+      state_str = "RECONNECT_PENDING";
+      break;
+  }
+
+  if (!frame_is_valid) {
+    state_str += ", FRAME_INVALID";
+  }
+
+  if (!description.empty()) {
+    state_str += ", " + description;
+  }
+
+  return "(reason=" + reason_str + ", current_state=" + state_str + ")";
+}
+
+void CefFrameImpl::OnDisconnect(DisconnectReason reason,
+                                const std::string& description) {
   // Ignore multiple calls in close proximity (which may occur if both
   // |browser_frame_| and |receiver_| disconnect). |frame_| will be nullptr
   // when called from/after OnDetached().
@@ -549,49 +610,16 @@ void CefFrameImpl::OnDisconnect(DisconnectReason reason) {
     return;
   }
 
-  if (VLOG_IS_ON(1)) {
-    std::string reason_str;
-    switch (reason) {
-      case DisconnectReason::DETACHED:
-        reason_str = "DETACHED";
-        break;
-      case DisconnectReason::BROWSER_FRAME_DETACHED:
-        reason_str = "BROWSER_FRAME_DETACHED";
-        break;
-      case DisconnectReason::CONNECT_TIMEOUT:
-        reason_str = "CONNECT_TIMEOUT";
-        break;
-      case DisconnectReason::RENDER_FRAME_DISCONNECT:
-        reason_str = "RENDER_FRAME_DISCONNECT";
-        break;
-      case DisconnectReason::BROWSER_FRAME_DISCONNECT:
-        reason_str = "BROWSER_FRAME_DISCONNECT";
-        break;
-    };
-
-    std::string state_str;
-    switch (browser_connection_state_) {
-      case ConnectionState::DISCONNECTED:
-        state_str = "DISCONNECTED";
-        break;
-      case ConnectionState::CONNECTION_PENDING:
-        state_str = "CONNECTION_PENDING";
-        break;
-      case ConnectionState::CONNECTION_ACKED:
-        state_str = "CONNECTION_ACKED";
-        break;
-      case ConnectionState::RECONNECT_PENDING:
-        state_str = "RECONNECT_PENDING";
-        break;
-    }
-
-    if (!frame_) {
-      state_str += ", FRAME_INVALID";
-    }
-
-    VLOG(1) << frame_debug_str_ << " disconnected (reason=" << reason_str
-            << ", current_state=" << state_str << ")";
+  if (attach_denied_) {
+    VLOG(1) << frame_debug_str_ << " connection attach denied";
+    return;
   }
+
+  const auto connection_state = browser_connection_state_;
+  const bool frame_is_valid = !!frame_;
+  VLOG(1) << frame_debug_str_ << " disconnected "
+          << GetDisconnectDebugString(connection_state, frame_is_valid, reason,
+                                      description);
 
   browser_frame_.reset();
   receiver_.reset();
@@ -617,15 +645,17 @@ void CefFrameImpl::OnDisconnect(DisconnectReason reason) {
                          ConnectReason::RETRY));
     } else {
       // Trigger a crash in official builds.
-      LOG(FATAL) << frame_debug_str_ << " connection retry failed";
+      LOG(FATAL) << frame_debug_str_ << " connection retry failed "
+                 << GetDisconnectDebugString(connection_state, frame_is_valid,
+                                             reason, description);
     }
   }
 }
 
 void CefFrameImpl::SendToBrowserFrame(const std::string& function_name,
                                       BrowserFrameAction action) {
-  if (!frame_) {
-    // We've been detached.
+  if (!frame_ || attach_denied_) {
+    // We're detached.
     LOG(WARNING) << function_name << " sent to detached " << frame_debug_str_
                  << " will be ignored";
     return;
@@ -670,13 +700,22 @@ void CefFrameImpl::MaybeInitializeScriptContext() {
   frame_->MainWorldScriptContext();
 }
 
-void CefFrameImpl::FrameAttachedAck() {
+void CefFrameImpl::FrameAttachedAck(bool allow) {
   // Sent from the browser process in response to ConnectBrowserFrame() sending
   // FrameAttached().
   CHECK_EQ(ConnectionState::CONNECTION_PENDING, browser_connection_state_);
   browser_connection_state_ = ConnectionState::CONNECTION_ACKED;
   browser_connect_retry_ct_ = 0;
   browser_connect_timer_.Stop();
+
+  if (!allow) {
+    // This will be followed by a connection disconnect from the browser side.
+    attach_denied_ = true;
+    while (!queued_browser_actions_.empty()) {
+      queued_browser_actions_.pop();
+    }
+    return;
+  }
 
   auto& browser_frame = GetBrowserFrame();
   CHECK(browser_frame);
@@ -690,7 +729,7 @@ void CefFrameImpl::FrameAttachedAck() {
 void CefFrameImpl::FrameDetached() {
   // Sent from the browser process in response to CefFrameHostImpl::Detach().
   CHECK_EQ(ConnectionState::CONNECTION_ACKED, browser_connection_state_);
-  OnDisconnect(DisconnectReason::BROWSER_FRAME_DETACHED);
+  OnDisconnect(DisconnectReason::BROWSER_FRAME_DETACHED, std::string());
 }
 
 void CefFrameImpl::SendMessage(const std::string& name,

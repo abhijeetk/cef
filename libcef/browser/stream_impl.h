@@ -6,12 +6,13 @@
 #define CEF_LIBCEF_BROWSER_STREAM_IMPL_H_
 #pragma once
 
-#include "include/cef_stream.h"
-
 #include <stdio.h>
-#include <string>
 
+#include <vector>
+
+#include "base/memory/raw_ptr.h"
 #include "base/synchronization/lock.h"
+#include "cef/include/cef_stream.h"
 
 // Implementation of CefStreamReader for files.
 class CefFileReader : public CefStreamReader {
@@ -27,7 +28,7 @@ class CefFileReader : public CefStreamReader {
 
  protected:
   bool close_;
-  FILE* file_;
+  raw_ptr<FILE> file_;
 
   base::Lock lock_;
 
@@ -47,7 +48,7 @@ class CefFileWriter : public CefStreamWriter {
   bool MayBlock() override { return true; }
 
  protected:
-  FILE* file_;
+  raw_ptr<FILE> file_;
   bool close_;
 
   base::Lock lock_;
@@ -58,8 +59,8 @@ class CefFileWriter : public CefStreamWriter {
 // Implementation of CefStreamReader for byte buffers.
 class CefBytesReader : public CefStreamReader {
  public:
-  CefBytesReader(void* data, int64_t datasize, bool copy);
-  ~CefBytesReader() override;
+  // |data| is always copied.
+  CefBytesReader(void* data, int64_t datasize);
 
   size_t Read(void* ptr, size_t size, size_t n) override;
   int Seek(int64_t offset, int whence) override;
@@ -67,49 +68,16 @@ class CefBytesReader : public CefStreamReader {
   int Eof() override;
   bool MayBlock() override { return false; }
 
-  void SetData(void* data, int64_t datasize, bool copy);
-
-  void* GetData() { return data_; }
-  size_t GetDataSize() { return offset_; }
+  // |data| is always copied.
+  void SetData(void* data, int64_t datasize);
 
  protected:
-  void* data_ = nullptr;
-  int64_t datasize_ = 0;
-  bool copy_ = false;
+  std::vector<unsigned char> data_;
   int64_t offset_ = 0;
 
   base::Lock lock_;
 
   IMPLEMENT_REFCOUNTING(CefBytesReader);
-};
-
-// Implementation of CefStreamWriter for byte buffers.
-class CefBytesWriter : public CefStreamWriter {
- public:
-  explicit CefBytesWriter(size_t grow);
-  ~CefBytesWriter() override;
-
-  size_t Write(const void* ptr, size_t size, size_t n) override;
-  int Seek(int64_t offset, int whence) override;
-  int64_t Tell() override;
-  int Flush() override;
-  bool MayBlock() override { return false; }
-
-  void* GetData() { return data_; }
-  int64_t GetDataSize() { return offset_; }
-  std::string GetDataString();
-
- protected:
-  size_t Grow(size_t size);
-
-  size_t grow_;
-  void* data_;
-  int64_t datasize_;
-  int64_t offset_ = 0;
-
-  base::Lock lock_;
-
-  IMPLEMENT_REFCOUNTING(CefBytesWriter);
 };
 
 // Implementation of CefStreamReader for handlers.

@@ -2,22 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be found
 // in the LICENSE file.
 
-#include "libcef/browser/views/window_impl.h"
+#include "cef/libcef/browser/views/window_impl.h"
 
 #include <memory>
 
-#include "libcef/browser/browser_util.h"
-#include "libcef/browser/chrome/views/chrome_browser_frame.h"
-#include "libcef/browser/thread_util.h"
-#include "libcef/browser/views/browser_view_impl.h"
-#include "libcef/browser/views/display_impl.h"
-#include "libcef/browser/views/fill_layout_impl.h"
-#include "libcef/browser/views/layout_util.h"
-#include "libcef/browser/views/view_util.h"
-#include "libcef/browser/views/window_view.h"
-#include "libcef/features/runtime.h"
-
 #include "base/i18n/rtl.h"
+#include "base/memory/raw_ptr.h"
+#include "cef/libcef/browser/browser_event_util.h"
+#include "cef/libcef/browser/thread_util.h"
+#include "cef/libcef/browser/views/browser_view_impl.h"
+#include "cef/libcef/browser/views/display_impl.h"
+#include "cef/libcef/browser/views/fill_layout_impl.h"
+#include "cef/libcef/browser/views/layout_util.h"
+#include "cef/libcef/browser/views/view_util.h"
+#include "cef/libcef/browser/views/widget.h"
+#include "cef/libcef/browser/views/window_view.h"
 #include "components/constrained_window/constrained_window_views.h"
 #include "ui/base/test/ui_controls.h"
 #include "ui/compositor/compositor.h"
@@ -87,7 +86,7 @@ class CefUnhandledKeyEventHandler : public ui::EventHandler {
     }
 
     CefKeyEvent cef_event;
-    if (browser_util::GetCefKeyEvent(*event, cef_event) &&
+    if (GetCefKeyEvent(*event, cef_event) &&
         window_impl_->OnKeyEvent(cef_event)) {
       event->StopPropagation();
     }
@@ -95,11 +94,11 @@ class CefUnhandledKeyEventHandler : public ui::EventHandler {
 
  private:
   // Members are guaranteed to outlive this object.
-  CefWindowImpl* window_impl_;
-  views::Widget* widget_;
+  raw_ptr<CefWindowImpl> window_impl_;
+  raw_ptr<views::Widget> widget_;
 
   // |window_| is the event target that is associated with this class.
-  aura::Window* window_;
+  raw_ptr<aura::Window> window_;
 };
 
 #endif  // defined(USE_AURA)
@@ -254,24 +253,19 @@ void CefWindowImpl::Restore() {
 void CefWindowImpl::SetFullscreen(bool fullscreen) {
   CEF_REQUIRE_VALID_RETURN_VOID();
   if (widget_ && fullscreen != widget_->IsFullscreen()) {
-    if (cef::IsChromeRuntimeEnabled()) {
-      // If a BrowserView exists, toggle fullscreen mode via the Chrome command
-      // for consistent behavior.
-      auto* browser_frame = static_cast<ChromeBrowserFrame*>(widget_);
-      if (browser_frame->browser_view()) {
-        browser_frame->ToggleFullscreenMode();
-        return;
-      }
+    if (CefWidget::GetForWidget(widget_)->ToggleFullscreenMode()) {
+      // Received special handling.
+      return;
     }
 
-    // Call the Widget method directly with Alloy runtime, or Chrome runtime
+    // Call the Widget method directly with Alloy style, or Chrome style
     // when no BrowserView exists.
     widget_->SetFullscreen(fullscreen);
 
-    // Use a synchronous callback notification on Windows/Linux. Chrome runtime
+    // Use a synchronous callback notification on Windows/Linux. Chrome style
     // on Windows/Linux gets notified synchronously via ChromeBrowserDelegate
-    // callbacks when a BrowserView exists. MacOS (both runtimes) gets notified
-    // asynchronously via CefNativeWidgetMac callbacks.
+    // callbacks when a BrowserView exists. MacOS (both runtime styles) gets
+    // notified asynchronously via CefNativeWidgetMac callbacks.
 #if !BUILDFLAG(IS_MAC)
     if (delegate()) {
       delegate()->OnWindowFullscreenTransition(this, /*is_completed=*/true);
@@ -739,6 +733,29 @@ void CefWindowImpl::RemoveAllAccelerators() {
   views::FocusManager* focus_manager = widget_->GetFocusManager();
   DCHECK(focus_manager);
   focus_manager->UnregisterAccelerators(this);
+}
+
+void CefWindowImpl::SetThemeColor(int color_id, cef_color_t color) {
+  CEF_REQUIRE_VALID_RETURN_VOID();
+  if (root_view()) {
+    view_util::SetColor(root_view(), color_id, color);
+  }
+}
+
+void CefWindowImpl::ThemeChanged() {
+  CEF_REQUIRE_VALID_RETURN_VOID();
+  if (widget_) {
+    widget_->ThemeChanged();
+  }
+}
+
+cef_runtime_style_t CefWindowImpl::GetRuntimeStyle() {
+  CEF_REQUIRE_VALID_RETURN(CEF_RUNTIME_STYLE_DEFAULT);
+  if (auto* window_view = cef_window_view()) {
+    return window_view->IsAlloyStyle() ? CEF_RUNTIME_STYLE_ALLOY
+                                       : CEF_RUNTIME_STYLE_CHROME;
+  }
+  return CEF_RUNTIME_STYLE_DEFAULT;
 }
 
 CefWindowView* CefWindowImpl::cef_window_view() const {

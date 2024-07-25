@@ -2,22 +2,21 @@
 // reserved. Use of this source code is governed by a BSD-style license that can
 // be found in the LICENSE file.
 
-#include "libcef/browser/frame_host_impl.h"
+#include "cef/libcef/browser/frame_host_impl.h"
 
-#include "include/cef_request.h"
-#include "include/cef_stream.h"
-#include "include/cef_v8.h"
-#include "include/test/cef_test_helpers.h"
-#include "libcef/browser/browser_host_base.h"
-#include "libcef/browser/net_service/browser_urlrequest_impl.h"
-#include "libcef/common/frame_util.h"
-#include "libcef/common/net/url_util.h"
-#include "libcef/common/process_message_impl.h"
-#include "libcef/common/process_message_smr_impl.h"
-#include "libcef/common/request_impl.h"
-#include "libcef/common/string_util.h"
-#include "libcef/common/task_runner_impl.h"
-
+#include "cef/include/cef_request.h"
+#include "cef/include/cef_stream.h"
+#include "cef/include/cef_v8.h"
+#include "cef/include/test/cef_test_helpers.h"
+#include "cef/libcef/browser/browser_host_base.h"
+#include "cef/libcef/browser/net_service/browser_urlrequest_impl.h"
+#include "cef/libcef/common/frame_util.h"
+#include "cef/libcef/common/net/url_util.h"
+#include "cef/libcef/common/process_message_impl.h"
+#include "cef/libcef/common/process_message_smr_impl.h"
+#include "cef/libcef/common/request_impl.h"
+#include "cef/libcef/common/string_util.h"
+#include "cef/libcef/common/task_runner_impl.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -41,7 +40,7 @@ void ViewTextCallback(CefRefPtr<CefFrameHostImpl> frame,
         std::move(response),
         base::BindOnce(
             [](CefRefPtr<CefBrowser> browser, const CefString& str) {
-              static_cast<CefBrowserHostBase*>(browser.get())->ViewText(str);
+              CefBrowserHostBase::FromBrowser(browser)->ViewText(str);
             },
             browser));
   }
@@ -522,7 +521,7 @@ bool CefFrameHostImpl::Detach(DetachReason reason) {
   bool first_detach = false;
 
   // Should not be called for temporary frames.
-  DCHECK(!is_temporary());
+  CHECK(!is_temporary());
 
   {
     base::AutoLock lock_scope(state_lock_);
@@ -549,17 +548,31 @@ bool CefFrameHostImpl::Detach(DetachReason reason) {
 
 void CefFrameHostImpl::MaybeReAttach(
     scoped_refptr<CefBrowserInfo> browser_info,
-    content::RenderFrameHost* render_frame_host) {
+    content::RenderFrameHost* render_frame_host,
+    bool require_detached) {
   CEF_REQUIRE_UIT();
   if (render_frame_.is_bound() && render_frame_host_ == render_frame_host) {
     // Nothing to do here.
     return;
   }
 
-  // We expect that Detach() was called previously.
+  // Should not be called for temporary frames.
   CHECK(!is_temporary());
-  CHECK(!render_frame_.is_bound());
-  CHECK(!render_frame_host_);
+
+  // If |require_detached| then we expect that Detach() was called previously.
+  CHECK(!require_detached || !render_frame_.is_bound());
+
+  if (render_frame_host_) {
+    // Intentionally not clearing |queued_renderer_actions_|, as we may be
+    // changing RFH during initial browser navigation.
+    VLOG(1) << GetDebugString()
+            << " detached (reason=RENDER_FRAME_CHANGED, is_connected="
+            << render_frame_.is_bound() << ")";
+    if (render_frame_.is_bound()) {
+      render_frame_->FrameDetached();
+    }
+    render_frame_.reset();
+  }
 
   // The RFH may change but the frame token should remain the same.
   CHECK(*frame_token_ == render_frame_host->GetGlobalFrameToken());
@@ -674,7 +687,7 @@ void CefFrameHostImpl::FrameAttached(
       base::BindOnce(&CefFrameHostImpl::OnRenderFrameDisconnect, this));
 
   // Notify the renderer process that it can start sending messages.
-  render_frame_->FrameAttachedAck();
+  render_frame_->FrameAttachedAck(/*allow=*/true);
 
   while (!queued_renderer_actions_.empty()) {
     std::move(queued_renderer_actions_.front().second).Run(render_frame_);
@@ -692,7 +705,7 @@ void CefFrameHostImpl::FrameAttached(
 }
 
 void CefFrameHostImpl::UpdateDraggableRegions(
-    absl::optional<std::vector<cef::mojom::DraggableRegionEntryPtr>> regions) {
+    std::optional<std::vector<cef::mojom::DraggableRegionEntryPtr>> regions) {
   auto browser = GetBrowserHostBase();
   if (!browser) {
     return;

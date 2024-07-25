@@ -11,9 +11,9 @@
 #include <queue>
 #include <string>
 
-#include "include/cef_frame.h"
-
+#include "base/memory/raw_ptr.h"
 #include "base/synchronization/lock.h"
+#include "cef/include/cef_frame.h"
 #include "cef/libcef/common/mojom/cef.mojom.h"
 #include "content/public/browser/global_routing_id.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
@@ -84,7 +84,7 @@ class CefFrameHostImpl : public CefFrame, public cef::mojom::BrowserFrame {
   void RefreshAttributes();
 
   // Notification that a move or resize of the renderer's containing window has
-  // started. Used on Windows and Linux with the Alloy runtime.
+  // started. Used on Windows and Linux with Alloy style.
   void NotifyMoveOrResizeStarted();
 
   // Load the specified request.
@@ -144,7 +144,8 @@ class CefFrameHostImpl : public CefFrame, public cef::mojom::BrowserFrame {
   // cache. We may need to re-attach if the RFH has changed. See
   // https://crbug.com/1179502#c8 for additional background.
   void MaybeReAttach(scoped_refptr<CefBrowserInfo> browser_info,
-                     content::RenderFrameHost* render_frame_host);
+                     content::RenderFrameHost* render_frame_host,
+                     bool require_detached);
 
   // cef::mojom::BrowserFrame methods forwarded from CefBrowserFrame.
   void SendMessage(const std::string& name,
@@ -154,7 +155,7 @@ class CefFrameHostImpl : public CefFrame, public cef::mojom::BrowserFrame {
   void FrameAttached(mojo::PendingRemote<cef::mojom::RenderFrame> render_frame,
                      bool reattached) override;
   void UpdateDraggableRegions(
-      absl::optional<std::vector<cef::mojom::DraggableRegionEntryPtr>> regions)
+      std::optional<std::vector<cef::mojom::DraggableRegionEntryPtr>> regions)
       override;
 
   bool is_temporary() const { return !frame_token_.has_value(); }
@@ -196,7 +197,7 @@ class CefFrameHostImpl : public CefFrame, public cef::mojom::BrowserFrame {
   std::optional<content::GlobalRenderFrameHostToken> parent_frame_token_;
 
   // The following members are only accessed on the UI thread.
-  content::RenderFrameHost* render_frame_host_ = nullptr;
+  raw_ptr<content::RenderFrameHost> render_frame_host_ = nullptr;
 
   std::queue<std::pair<std::string, RenderFrameAction>>
       queued_renderer_actions_;

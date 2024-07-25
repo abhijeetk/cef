@@ -9,10 +9,11 @@
 // implementations. See the translator.README.txt file in the tools directory
 // for more information.
 //
-// $hash=f5c482db02b530d627e487b8ba71019577910637$
+// $hash=88f55766622ea99679e1b4c2748103d397e32117$
 //
 
 #include "libcef_dll/ctocpp/views/browser_view_ctocpp.h"
+
 #include "libcef_dll/cpptoc/client_cpptoc.h"
 #include "libcef_dll/cpptoc/views/browser_view_delegate_cpptoc.h"
 #include "libcef_dll/cpptoc/views/view_delegate_cpptoc.h"
@@ -126,6 +127,24 @@ void CefBrowserViewCToCpp::SetPreferAccelerators(bool prefer_accelerators) {
 
   // Execute
   _struct->set_prefer_accelerators(_struct, prefer_accelerators);
+}
+
+NO_SANITIZE("cfi-icall")
+cef_runtime_style_t CefBrowserViewCToCpp::GetRuntimeStyle() {
+  shutdown_checker::AssertNotShutdown();
+
+  cef_browser_view_t* _struct = GetStruct();
+  if (CEF_MEMBER_MISSING(_struct, get_runtime_style)) {
+    return CEF_RUNTIME_STYLE_DEFAULT;
+  }
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Execute
+  cef_runtime_style_t _retval = _struct->get_runtime_style(_struct);
+
+  // Return type: simple
+  return _retval;
 }
 
 NO_SANITIZE("cfi-icall")
@@ -859,6 +878,24 @@ cef_color_t CefBrowserViewCToCpp::GetBackgroundColor() {
 
   // Execute
   cef_color_t _retval = _struct->get_background_color(_struct);
+
+  // Return type: simple
+  return _retval;
+}
+
+NO_SANITIZE("cfi-icall")
+cef_color_t CefBrowserViewCToCpp::GetThemeColor(int color_id) {
+  shutdown_checker::AssertNotShutdown();
+
+  cef_view_t* _struct = reinterpret_cast<cef_view_t*>(GetStruct());
+  if (CEF_MEMBER_MISSING(_struct, get_theme_color)) {
+    return 0;
+  }
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Execute
+  cef_color_t _retval = _struct->get_theme_color(_struct, color_id);
 
   // Return type: simple
   return _retval;

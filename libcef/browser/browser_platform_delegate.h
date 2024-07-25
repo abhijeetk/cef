@@ -9,13 +9,12 @@
 #include <string>
 #include <vector>
 
-#include "include/cef_client.h"
-#include "include/cef_drag_data.h"
-#include "include/internal/cef_types.h"
-#include "include/views/cef_browser_view.h"
-
 #include "base/functional/callback_forward.h"
-#include "extensions/common/mojom/view_type.mojom-forward.h"
+#include "base/memory/raw_ptr.h"
+#include "cef/include/cef_client.h"
+#include "cef/include/cef_drag_data.h"
+#include "cef/include/internal/cef_types.h"
+#include "cef/include/views/cef_browser_view.h"
 #include "third_party/blink/public/common/page/drag_operation.h"
 #include "third_party/blink/public/mojom/drag/drag.mojom-forward.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -37,21 +36,13 @@ class WindowFeatures;
 }  // namespace blink
 
 namespace content {
-struct AXEventNotificationDetails;
-struct AXLocationChangeNotificationDetails;
 struct DropData;
-struct NativeWebKeyboardEvent;
 class RenderViewHost;
 class RenderViewHostDelegateView;
 class RenderWidgetHostImpl;
 class WebContents;
 class WebContentsView;
 }  // namespace content
-
-namespace extensions {
-class Extension;
-class ExtensionHost;
-}  // namespace extensions
 
 namespace gfx {
 class ImageSkia;
@@ -60,6 +51,15 @@ class Rect;
 class Size;
 class Vector2d;
 }  // namespace gfx
+
+namespace input {
+struct NativeWebKeyboardEvent;
+}
+
+namespace ui {
+struct AXLocationChanges;
+struct AXUpdatesAndEvents;
+}  // namespace ui
 
 namespace views {
 class Widget;
@@ -88,7 +88,7 @@ class CefBrowserPlatformDelegate {
   static std::unique_ptr<CefBrowserPlatformDelegate> Create(
       const CefBrowserCreateParams& create_params);
 
-  // Called from AlloyBrowserHostImpl::Create.
+  // Called from BrowserHost::Create.
   // Wait for the call to WebContentsCreated(owned=true) before taking ownership
   // of the resulting WebContents object.
   virtual content::WebContents* CreateWebContents(
@@ -99,8 +99,8 @@ class CefBrowserPlatformDelegate {
   // called a single time per instance. May be called on multiple threads. Only
   // used with windowless rendering.
   virtual void CreateViewForWebContents(
-      content::WebContentsView** view,
-      content::RenderViewHostDelegateView** delegate_view);
+      raw_ptr<content::WebContentsView>* view,
+      raw_ptr<content::RenderViewHostDelegateView>* delegate_view);
 
   // Called after the WebContents for a browser has been created. |owned| will
   // be true if |web_contents| was created via CreateWebContents() and we should
@@ -126,28 +126,16 @@ class CefBrowserPlatformDelegate {
   // BrowserDestroyed(). Will only be called a single time per instance.
   virtual void WebContentsDestroyed(content::WebContents* web_contents);
 
-  // See WebContentsDelegate documentation.
-  virtual bool ShouldAllowRendererInitiatedCrossProcessNavigation(
-      bool is_main_frame_navigation);
-
   // Called after the RenderViewHost is created.
   virtual void RenderViewCreated(content::RenderViewHost* render_view_host);
 
   // See WebContentsObserver documentation.
   virtual void RenderViewReady();
 
-  // Called after the owning AlloyBrowserHostImpl is created. Will only be
+  // Called after the owning BrowserHost is created. Will only be
   // called a single time per instance. Do not send any client notifications
   // from this method.
   virtual void BrowserCreated(CefBrowserHostBase* browser);
-
-  // Called from AlloyBrowserHostImpl::Create.
-  virtual void CreateExtensionHost(const extensions::Extension* extension,
-                                   const GURL& url,
-                                   extensions::mojom::ViewType host_type);
-
-  // Returns the current extension host.
-  virtual extensions::ExtensionHost* GetExtensionHost() const;
 
   // Send any notifications related to browser creation. Called after
   // BrowserCreated().
@@ -157,9 +145,9 @@ class CefBrowserPlatformDelegate {
   // BrowserDestroyed().
   virtual void NotifyBrowserDestroyed();
 
-  // Called before the owning AlloyBrowserHostImpl is destroyed. Will only be
+  // Called before the owning BrowserHost is destroyed. Will only be
   // called a single time per instance. All references to the
-  // AlloyBrowserHostImpl and WebContents should be cleared when this method is
+  // BrowserHost and WebContents should be cleared when this method is
   // called. Do not send any client notifications from this method.
   virtual void BrowserDestroyed(CefBrowserHostBase* browser);
 
@@ -182,35 +170,48 @@ class CefBrowserPlatformDelegate {
   // rendering.
   virtual views::Widget* GetWindowWidget() const;
 
-  // Returns the BrowserView associated with this browser. Only used with views-
+  // Returns the BrowserView associated with this browser. Only used with Views-
   // based browsers.
   virtual CefRefPtr<CefBrowserView> GetBrowserView() const;
+
+  // Sets the BrowserView associated with this browser. Only used with
+  // Views-based browsers.
+  virtual void SetBrowserView(CefRefPtr<CefBrowserView> browser_view);
 
   // Returns the WebContentsModalDialogHost associated with this browser.
   virtual web_modal::WebContentsModalDialogHost* GetWebContentsModalDialogHost()
       const;
 
   // Called after the WebContents have been created for a new popup browser
-  // parented to this browser but before the AlloyBrowserHostImpl is created for
-  // the popup. |is_devtools| will be true if the popup will host DevTools. This
+  // parented to this browser but before the BrowserHost is created for the
+  // popup. |is_devtools| will be true if the popup will host DevTools. This
   // method will be called before WebContentsCreated() is called on
-  // |new_platform_delegate|. Do not make the new browser visible in this
+  // |new_platform_delegate|. Does not make the new browser visible in this
   // callback.
-  virtual void PopupWebContentsCreated(
+  void PopupWebContentsCreated(
       const CefBrowserSettings& settings,
       CefRefPtr<CefClient> client,
       content::WebContents* new_web_contents,
       CefBrowserPlatformDelegate* new_platform_delegate,
       bool is_devtools);
 
-  // Called after the AlloyBrowserHostImpl is created for a new popup browser
-  // parented to this browser. |is_devtools| will be true if the popup will host
-  // DevTools. This method will be called immediately after
+  // Called after the BrowserHost is created for a new popup browser parented to
+  // this browser. |is_devtools| will be true if the popup will host DevTools.
+  // This method will be called immediately after
   // CefLifeSpanHandler::OnAfterCreated() for the popup browser. It is safe to
   // make the new browser visible in this callback (for example, add the browser
   // to a window and show it).
-  virtual void PopupBrowserCreated(CefBrowserHostBase* new_browser,
-                                   bool is_devtools);
+  void PopupBrowserCreated(CefBrowserPlatformDelegate* new_platform_delegate,
+                           CefBrowserHostBase* new_browser,
+                           bool is_devtools);
+
+  // Called from PopupWebContentsCreated/PopupBrowserCreated to retrieve the
+  // default BrowserViewDelegate in cases where this is a new Views-based popup
+  // and the opener is either not Views-based or doesn't implement the
+  // BrowserViewDelegate. Only implemented for specific configurations where
+  // special handling of new popups is required for proper functioning.
+  virtual CefRefPtr<CefBrowserViewDelegate>
+  GetDefaultBrowserViewDelegateForPopupOpener();
 
   // Returns the background color for the browser. The alpha component will be
   // either SK_AlphaTRANSPARENT or SK_AlphaOPAQUE (e.g. fully transparent or
@@ -262,22 +263,14 @@ class CefBrowserPlatformDelegate {
 
   // Forward the keyboard event to the application or frame window to allow
   // processing of shortcut keys.
-  virtual bool HandleKeyboardEvent(
-      const content::NativeWebKeyboardEvent& event);
-
-  // See WebContentsDelegate documentation.
-  virtual bool PreHandleGestureEvent(content::WebContents* source,
-                                     const blink::WebGestureEvent& event);
-
-  // See WebContentsDelegate documentation.
-  virtual bool IsNeverComposited(content::WebContents* web_contents);
+  virtual bool HandleKeyboardEvent(const input::NativeWebKeyboardEvent& event);
 
   // Invoke platform specific handling for the external protocol.
   static void HandleExternalProtocol(const GURL& url);
 
   // Returns the OS event handle, if any, associated with |event|.
   virtual CefEventHandle GetEventHandle(
-      const content::NativeWebKeyboardEvent& event) const;
+      const input::NativeWebKeyboardEvent& event) const;
 
   // Create the platform-specific JavaScript dialog runner.
   virtual std::unique_ptr<CefJavaScriptDialogRunner>
@@ -293,6 +286,11 @@ class CefBrowserPlatformDelegate {
   // Returns true if this delegate implements views-hosted browser handling. May
   // be called on multiple threads.
   virtual bool IsViewsHosted() const;
+
+  // Returns the runtime style implemented by this delegate. May be called on
+  // multiple threads.
+  virtual bool IsAlloyStyle() const = 0;
+  bool IsChromeStyle() const { return !IsAlloyStyle(); }
 
   // Returns true if this delegate implements a browser with external
   // (client-provided) parent window. May be called on multiple threads.
@@ -352,9 +350,9 @@ class CefBrowserPlatformDelegate {
   virtual void DragSourceEndedAt(int x, int y, cef_drag_operations_mask_t op);
   virtual void DragSourceSystemDragEnded();
   virtual void AccessibilityEventReceived(
-      const content::AXEventNotificationDetails& eventData);
+      const ui::AXUpdatesAndEvents& details);
   virtual void AccessibilityLocationChangesReceived(
-      const std::vector<content::AXLocationChangeNotificationDetails>& locData);
+      const std::vector<ui::AXLocationChanges>& details);
   virtual gfx::Point GetDialogPosition(const gfx::Size& size);
   virtual gfx::Size GetMaximumDialogSize();
 
@@ -380,8 +378,8 @@ class CefBrowserPlatformDelegate {
   static int TranslateWebEventModifiers(uint32_t cef_modifiers);
 
   // Not owned by this object.
-  content::WebContents* web_contents_ = nullptr;
-  CefBrowserHostBase* browser_ = nullptr;
+  raw_ptr<content::WebContents> web_contents_ = nullptr;
+  raw_ptr<CefBrowserHostBase> browser_ = nullptr;
 };
 
 #endif  // CEF_LIBCEF_BROWSER_BROWSER_PLATFORM_DELEGATE_H_

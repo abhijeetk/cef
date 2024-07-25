@@ -31,8 +31,6 @@
 
 namespace client {
 
-typedef std::set<CefRefPtr<CefExtension>> ExtensionSet;
-
 // Implements a CefWindow that hosts a single CefBrowserView and optional
 // Views-hosted controls. All methods must be called on the browser process UI
 // thread.
@@ -46,6 +44,10 @@ class ViewsWindow : public CefBrowserViewDelegate,
   // Delegate methods will be called on the browser process UI thread.
   class Delegate {
    public:
+    // Returns true if the window should use Alloy style, otherwise Chrome
+    // style.
+    virtual bool UseAlloyStyle() const = 0;
+
     // Return true if the window should show controls.
     virtual bool WithControls() = 0;
 
@@ -79,13 +81,6 @@ class ViewsWindow : public CefBrowserViewDelegate,
 
     // Return the Delegate for the popup window controlled by |client|.
     virtual Delegate* GetDelegateForPopup(CefRefPtr<CefClient> client) = 0;
-
-    // Create a window for |extension|. |source_bounds| are the bounds of the
-    // UI element, like a button, that triggered the extension.
-    virtual void CreateExtensionWindow(CefRefPtr<CefExtension> extension,
-                                       const CefRect& source_bounds,
-                                       CefRefPtr<CefWindow> parent_window,
-                                       base::OnceClosure close_callback) = 0;
 
     // Called to execute a test. See resource.h for |test_id| values.
     virtual void OnTest(int test_id) = 0;
@@ -126,7 +121,6 @@ class ViewsWindow : public CefBrowserViewDelegate,
   void SetDraggableRegions(const std::vector<CefDraggableRegion>& regions);
   void TakeFocus(bool next);
   void OnBeforeContextMenu(CefRefPtr<CefMenuModel> model);
-  void OnExtensionsChanged(const ExtensionSet& extensions);
 
   static bool SupportsWindowRestore(WindowType type);
   bool SupportsWindowRestore() const;
@@ -147,6 +141,7 @@ class ViewsWindow : public CefBrowserViewDelegate,
       CefRefPtr<CefBrowserView> browser_view) override;
   bool UseFramelessWindowForPictureInPicture(
       CefRefPtr<CefBrowserView> browser_view) override;
+  cef_runtime_style_t GetBrowserRuntimeStyle() override;
 
   // CefButtonDelegate methods:
   void OnButtonPressed(CefRefPtr<CefButton> button) override;
@@ -184,6 +179,7 @@ class ViewsWindow : public CefBrowserViewDelegate,
   bool WithStandardWindowButtons(CefRefPtr<CefWindow> window) override;
   bool GetTitlebarHeight(CefRefPtr<CefWindow> window,
                          float* titlebar_height) override;
+  cef_state_t AcceptsFirstMouse(CefRefPtr<CefWindow> window) override;
   bool CanResize(CefRefPtr<CefWindow> window) override;
   bool CanMaximize(CefRefPtr<CefWindow> window) override;
   bool CanMinimize(CefRefPtr<CefWindow> window) override;
@@ -193,15 +189,18 @@ class ViewsWindow : public CefBrowserViewDelegate,
                   const CefKeyEvent& event) override;
   void OnWindowFullscreenTransition(CefRefPtr<CefWindow> window,
                                     bool is_completed) override;
+  void OnThemeColorsChanged(CefRefPtr<CefWindow> window,
+                            bool chrome_theme) override;
+  cef_runtime_style_t GetWindowRuntimeStyle() override;
 
   // CefViewDelegate methods:
   CefSize GetPreferredSize(CefRefPtr<CefView> view) override;
   CefSize GetMinimumSize(CefRefPtr<CefView> view) override;
   void OnFocus(CefRefPtr<CefView> view) override;
-  void OnBlur(CefRefPtr<CefView> view) override;
   void OnWindowChanged(CefRefPtr<CefView> view, bool added) override;
   void OnLayoutChanged(CefRefPtr<CefView> view,
                        const CefRect& new_bounds) override;
+  void OnThemeChanged(CefRefPtr<CefView> view) override;
 
   // ViewsMenuBar::Delegate methods:
   void MenuBarExecuteCommand(CefRefPtr<CefMenuModel> menu_model,
@@ -238,23 +237,18 @@ class ViewsWindow : public CefBrowserViewDelegate,
   // Control whether the top menu butons are focusable.
   void SetMenuFocusable(bool focusable);
 
-  // Enable or disable a view by |id|.
-  void EnableView(int id, bool enable);
+  // Update the toolbar button state.
+  void UpdateToolbarButtonState();
 
   // Show/hide top controls on the Window.
   void ShowTopControls(bool show);
-
-  // Update extension controls on the Window.
-  void UpdateExtensionControls();
-
-  void OnExtensionIconsLoaded(const ExtensionSet& extensions,
-                              const ImageCache::ImageSet& images);
-  void OnExtensionWindowClosed();
 
   void NudgeWindow();
 
   const WindowType type_;
   Delegate* delegate_;  // Not owned by this object.
+  const bool use_alloy_style_;
+  bool use_alloy_style_window_;
   CefRefPtr<CefBrowserView> browser_view_;
   CefRefPtr<CefCommandLine> command_line_;
   bool frameless_;
@@ -265,6 +259,7 @@ class ViewsWindow : public CefBrowserViewDelegate,
   bool use_window_modal_dialog_;
   bool use_bottom_controls_;
   bool hide_pip_frame_;
+  bool accepts_first_mouse_;
   CefRefPtr<CefWindow> window_;
 
   CefRefPtr<CefMenuModel> button_menu_model_;
@@ -288,19 +283,10 @@ class ViewsWindow : public CefBrowserViewDelegate,
   bool hide_after_fullscreen_exit_ = false;
 #endif
 
-  // Structure representing an extension.
-  struct ExtensionInfo {
-    ExtensionInfo(CefRefPtr<CefExtension> extension, CefRefPtr<CefImage> image)
-        : extension_(extension), image_(image) {}
-
-    CefRefPtr<CefExtension> extension_;
-    CefRefPtr<CefImage> image_;
-  };
-  typedef std::vector<ExtensionInfo> ExtensionInfoSet;
-
-  ExtensionInfoSet extensions_;
-  CefRefPtr<CefPanel> extensions_panel_;
-  CefRefPtr<CefMenuButtonPressedLock> extension_button_pressed_lock_;
+  // Current loading state.
+  bool is_loading_ = false;
+  bool can_go_back_ = false;
+  bool can_go_forward_ = false;
 
   IMPLEMENT_REFCOUNTING(ViewsWindow);
   DISALLOW_COPY_AND_ASSIGN(ViewsWindow);

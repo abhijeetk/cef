@@ -104,11 +104,9 @@ class StreamReaderURLLoader : public network::mojom::URLLoader {
   // on the IO thread unless otherwise indicated.
   class Delegate : public ResourceResponse {
    public:
-    // This method is called if the result of calling OpenInputStream was null.
-    // The |restarted| parameter is set to true if the request was restarted
-    // with a new loader.
-    virtual void OnInputStreamOpenFailed(int32_t request_id,
-                                         bool* restarted) = 0;
+    // Called if the result of calling OpenInputStream was nullptr. Returns
+    // true if the failure was handled.
+    virtual bool OnInputStreamOpenFailed(int32_t request_id) = 0;
   };
 
   StreamReaderURLLoader(
@@ -117,7 +115,7 @@ class StreamReaderURLLoader : public network::mojom::URLLoader {
       mojo::PendingRemote<network::mojom::URLLoaderClient> client,
       mojo::PendingRemote<network::mojom::TrustedHeaderClient> header_client,
       const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
-      absl::optional<mojo_base::BigBuffer> cached_metadata,
+      std::optional<mojo_base::BigBuffer> cached_metadata,
       std::unique_ptr<Delegate> response_delegate);
 
   StreamReaderURLLoader(const StreamReaderURLLoader&) = delete;
@@ -127,12 +125,16 @@ class StreamReaderURLLoader : public network::mojom::URLLoader {
 
   void Start();
 
+  // Called by the client in response to OnReceiveResponse.
+  void Continue();
+  void Cancel();
+
   // network::mojom::URLLoader methods:
   void FollowRedirect(
       const std::vector<std::string>& removed_headers,
       const net::HttpRequestHeaders& modified_headers,
       const net::HttpRequestHeaders& modified_cors_exempt_headers,
-      const absl::optional<GURL>& new_url) override;
+      const std::optional<GURL>& new_url) override;
   void SetPriority(net::RequestPriority priority,
                    int intra_priority_value) override;
   void PauseReadingBodyFromNet() override;
@@ -141,7 +143,7 @@ class StreamReaderURLLoader : public network::mojom::URLLoader {
  private:
   void ContinueWithRequestHeaders(
       int32_t result,
-      const absl::optional<net::HttpRequestHeaders>& headers);
+      const std::optional<net::HttpRequestHeaders>& headers);
   void OnInputStreamOpened(std::unique_ptr<Delegate> returned_delegate,
                            std::unique_ptr<InputStream> input_stream);
 
@@ -150,8 +152,8 @@ class StreamReaderURLLoader : public network::mojom::URLLoader {
   void ContinueWithResponseHeaders(
       network::mojom::URLResponseHeadPtr pending_response,
       int32_t result,
-      const absl::optional<std::string>& headers,
-      const absl::optional<GURL>& redirect_url);
+      const std::optional<std::string>& headers,
+      const std::optional<GURL>& redirect_url);
 
   void ReadMore();
   void OnDataPipeWritable(MojoResult result);
@@ -173,7 +175,7 @@ class StreamReaderURLLoader : public network::mojom::URLLoader {
   mojo::Remote<network::mojom::URLLoaderClient> client_;
   mojo::Remote<network::mojom::TrustedHeaderClient> header_client_;
   const net::MutableNetworkTrafficAnnotationTag traffic_annotation_;
-  absl::optional<mojo_base::BigBuffer> cached_metadata_;
+  std::optional<mojo_base::BigBuffer> cached_metadata_;
   std::unique_ptr<Delegate> response_delegate_;
   scoped_refptr<InputStreamReader> input_stream_reader_;
 
@@ -185,6 +187,9 @@ class StreamReaderURLLoader : public network::mojom::URLLoader {
   scoped_refptr<base::SequencedTaskRunner> stream_work_task_runner_;
 
   base::OnceClosure open_cancel_callback_;
+
+  bool need_client_callback_ = false;
+  bool got_client_callback_ = false;
 
   base::WeakPtrFactory<StreamReaderURLLoader> weak_factory_;
 };

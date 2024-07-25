@@ -2,7 +2,7 @@
 // reserved. Use of this source code is governed by a BSD-style license that can
 // be found in the LICENSE file.
 
-#include "libcef/common/cef_switches.h"
+#include "cef/libcef/common/cef_switches.h"
 
 namespace switches {
 
@@ -28,9 +28,6 @@ const char kResourcesDirPath[] = "resources-dir-path";
 
 // Path to locales directory.
 const char kLocalesDirPath[] = "locales-dir-path";
-
-// Path to locales directory.
-const char kDisablePackLoading[] = "disable-pack-loading";
 
 // Stack size for uncaught exceptions.
 const char kUncaughtExceptionStackSize[] = "uncaught-exception-stack-size";
@@ -72,9 +69,6 @@ const char kDisableTabToLinks[] = "disable-tab-to-links";
 // Persist session cookies.
 const char kPersistSessionCookies[] = "persist-session-cookies";
 
-// Persist user preferences.
-const char kPersistUserPreferences[] = "persist-user-preferences";
-
 // Enable media (WebRTC audio/video) streaming.
 const char kEnableMediaStream[] = "enable-media-stream";
 
@@ -108,11 +102,7 @@ const char kDisableNewBrowserInfoTimeout[] = "disable-new-browser-info-timeout";
 // File used for logging DevTools protocol messages.
 const char kDevToolsProtocolLogFile[] = "devtools-protocol-log-file";
 
-// Enable use of the Chrome runtime in CEF. See issue #2969 for details.
-const char kEnableChromeRuntime[] = "enable-chrome-runtime";
-
-// Delegate all login requests to the client GetAuthCredentials callback when
-// using the Chrome runtime.
+// Delegate all login requests to the client GetAuthCredentials callback.
 const char kDisableChromeLoginPrompt[] = "disable-chrome-login-prompt";
 
 // Override the product component of the default User-Agent string.

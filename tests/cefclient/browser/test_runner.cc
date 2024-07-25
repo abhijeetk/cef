@@ -8,18 +8,21 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <string>
 
 #include "include/base/cef_callback.h"
+#include "include/base/cef_dump_without_crashing.h"
 #include "include/cef_parser.h"
 #include "include/cef_task.h"
 #include "include/cef_trace.h"
 #include "include/views/cef_browser_view.h"
 #include "include/wrapper/cef_closure_task.h"
 #include "include/wrapper/cef_stream_resource_handler.h"
+#include "tests/cefclient/browser/base_client_handler.h"
 #include "tests/cefclient/browser/binary_transfer_test.h"
 #include "tests/cefclient/browser/binding_test.h"
-#include "tests/cefclient/browser/client_handler.h"
 #include "tests/cefclient/browser/dialog_test.h"
+#include "tests/cefclient/browser/hang_test.h"
 #include "tests/cefclient/browser/main_context.h"
 #include "tests/cefclient/browser/media_router_test.h"
 #include "tests/cefclient/browser/preferences_test.h"
@@ -28,6 +31,7 @@
 #include "tests/cefclient/browser/root_window_manager.h"
 #include "tests/cefclient/browser/scheme_test.h"
 #include "tests/cefclient/browser/server_test.h"
+#include "tests/cefclient/browser/task_manager_test.h"
 #include "tests/cefclient/browser/urlrequest_test.h"
 #include "tests/cefclient/browser/window_test.h"
 #include "tests/shared/browser/resource_util.h"
@@ -50,9 +54,7 @@ const char kTestGetTextPage[] = "get_text.html";
 void LoadStringResourcePage(CefRefPtr<CefBrowser> browser,
                             const std::string& page,
                             const std::string& data) {
-  CefRefPtr<CefClient> client = browser->GetHost()->GetClient();
-  ClientHandler* client_handler = static_cast<ClientHandler*>(client.get());
-  client_handler->SetStringResource(page, data);
+  BaseClientHandler::GetForBrowser(browser)->SetStringResource(page, data);
   browser->GetMainFrame()->LoadURL(kTestOrigin + page);
 }
 
@@ -594,6 +596,9 @@ void RunTest(CefRefPtr<CefBrowser> browser, int id) {
     case ID_TESTS_OTHER_TESTS:
       RunOtherTests(browser);
       break;
+    case ID_TESTS_DUMP_WITHOUT_CRASHING:
+      CefDumpWithoutCrashing();
+      break;
   }
 }
 
@@ -752,8 +757,27 @@ std::string GetErrorString(cef_errorcode_t code) {
     CASE(ERR_CACHE_MISS);
     CASE(ERR_INSECURE_RESPONSE);
     default:
-      return "UNKNOWN";
+      return std::to_string(static_cast<int>(code));
   }
+}
+
+std::string GetErrorString(cef_termination_status_t status) {
+  switch (status) {
+    case TS_ABNORMAL_TERMINATION:
+      return "ABNORMAL_TERMINATION";
+    case TS_PROCESS_WAS_KILLED:
+      return "PROCESS_WAS_KILLED";
+    case TS_PROCESS_CRASHED:
+      return "PROCESS_CRASHED";
+    case TS_PROCESS_OOM:
+      return "PROCESS_OOM";
+    case TS_LAUNCH_FAILED:
+      return "LAUNCH_FAILED";
+    case TS_INTEGRITY_FAILURE:
+      return "INTEGRITY_FAILURE";
+  }
+  NOTREACHED();
+  return std::string();
 }
 
 void SetupResourceManager(CefRefPtr<CefResourceManager> resource_manager,
@@ -804,15 +828,6 @@ void SetupResourceManager(CefRefPtr<CefResourceManager> resource_manager,
 }
 
 void Alert(CefRefPtr<CefBrowser> browser, const std::string& message) {
-  if (browser->GetHost()->GetExtension()) {
-    // Alerts originating from extension hosts should instead be displayed in
-    // the active browser.
-    browser = MainContext::Get()->GetRootWindowManager()->GetActiveBrowser();
-    if (!browser) {
-      return;
-    }
-  }
-
   // Escape special characters in the message.
   std::string msg = AsciiStrReplace(message, "\\", "\\\\");
   msg = AsciiStrReplace(msg, "'", "\\'");
@@ -851,6 +866,9 @@ void CreateMessageHandlers(MessageHandlerSet& handlers) {
   // Create the dialog test handlers.
   dialog_test::CreateMessageHandlers(handlers);
 
+  // Create the hang test handlers.
+  hang_test::CreateMessageHandlers(handlers);
+
   // Create the media router test handlers.
   media_router_test::CreateMessageHandlers(handlers);
 
@@ -859,6 +877,9 @@ void CreateMessageHandlers(MessageHandlerSet& handlers) {
 
   // Create the server test handlers.
   server_test::CreateMessageHandlers(handlers);
+
+  // Create the task manager handlers.
+  task_manager_test::CreateMessageHandlers(handlers);
 
   // Create the urlrequest test handlers.
   urlrequest_test::CreateMessageHandlers(handlers);

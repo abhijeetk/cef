@@ -7,22 +7,23 @@
 #pragma once
 
 #include <vector>
-#include "include/cef_values.h"
 
-namespace content {
-struct AXEventNotificationDetails;
-struct AXLocationChangeNotificationDetails;
-}  // namespace content
+#include "cef/include/cef_values.h"
+
+namespace ui {
+struct AXLocationChanges;
+struct AXUpdatesAndEvents;
+}  // namespace ui
 
 namespace osr_accessibility_util {
 
 // Convert Accessibility Event and location updates to CefValue, which may be
 // consumed or serialized with CefJSONWrite.
 CefRefPtr<CefValue> ParseAccessibilityEventData(
-    const content::AXEventNotificationDetails& data);
+    const ui::AXUpdatesAndEvents& details);
 
 CefRefPtr<CefValue> ParseAccessibilityLocationData(
-    const std::vector<content::AXLocationChangeNotificationDetails>& data);
+    const std::vector<ui::AXLocationChanges>& details);
 
 }  // namespace osr_accessibility_util
 

@@ -24,9 +24,6 @@ namespace client {
 enum class WindowType {
   NORMAL,
 
-  // The window is hosting an extension app.
-  EXTENSION,
-
   // The window is a modal dialog.
   DIALOG,
 
@@ -44,6 +41,13 @@ struct RootWindowConfig {
   // Associated command-line.
   CefRefPtr<CefCommandLine> command_line;
 
+  // If true the Views framework will be used.
+  bool use_views;
+
+  // If true Alloy style will be used. Alloy style is optional. Windowless
+  // rendering requires Alloy style.
+  bool use_alloy_style;
+
   // Configure the window type.
   WindowType window_type = WindowType::NORMAL;
 
@@ -53,7 +57,7 @@ struct RootWindowConfig {
   // If true the window will show controls.
   bool with_controls = true;
 
-  // If true the window will use off-screen rendering.
+  // If true the window will use windowless (off-screen) rendering.
   bool with_osr = false;
 
   // If true the window will be created initially hidden.
@@ -84,8 +88,6 @@ struct RootWindowConfig {
   std::string url;
 };
 
-typedef std::set<CefRefPtr<CefExtension>> ExtensionSet;
-
 // Represents a top-level native window in the browser process. While references
 // to this object are thread-safe the methods must be called on the main thread
 // unless otherwise indicated.
@@ -97,9 +99,8 @@ class RootWindow
   class Delegate {
    public:
     // Called to synchronously retrieve the CefRequestContext for browser. Only
-    // called for non-popup browsers. Must be called on the main thread. With
-    // the Chrome runtime this method is only safe when using the global request
-    // context.
+    // called for non-popup browsers. Must be called on the main thread. This
+    // method is only safe when using the global request context.
     // TODO: Delete this method and use the async version instead.
     virtual CefRefPtr<CefRequestContext> GetRequestContext() = 0;
 
@@ -127,18 +128,6 @@ class RootWindow
     // Called when the RootWindow is activated (becomes the foreground window).
     virtual void OnRootWindowActivated(RootWindow* root_window) = 0;
 
-    // Called when the browser is created for the RootWindow.
-    virtual void OnBrowserCreated(RootWindow* root_window,
-                                  CefRefPtr<CefBrowser> browser) = 0;
-
-    // Create a window for |extension|. |source_bounds| are the bounds of the
-    // UI element, like a button, that triggered the extension.
-    virtual void CreateExtensionWindow(CefRefPtr<CefExtension> extension,
-                                       const CefRect& source_bounds,
-                                       CefRefPtr<CefWindow> parent_window,
-                                       base::OnceClosure close_callback,
-                                       bool with_osr) = 0;
-
    protected:
     virtual ~Delegate() = default;
   };
@@ -146,11 +135,9 @@ class RootWindow
   // Create a new RootWindow object. This method may be called on any thread.
   // Use RootWindowManager::CreateRootWindow() or CreateRootWindowAsPopup()
   // instead of calling this method directly. |use_views| will be true if the
-  // Views framework should be used. |parent_window| will be non-nullptr for
-  // popup browsers with a RootWindow parent (on the UI thread only).
-  static scoped_refptr<RootWindow> Create(
-      bool use_views,
-      scoped_refptr<RootWindow> parent_window);
+  // Views framework should be used. |use_alloy_style| will be true if Alloy
+  // style should be used.
+  static scoped_refptr<RootWindow> Create(bool use_views, bool use_alloy_style);
 
   // Returns the RootWindow associated with the specified |browser_id|. Must be
   // called on the main thread.
@@ -158,6 +145,9 @@ class RootWindow
 
   // Returns true if the RootWindow is Views-hosted.
   virtual bool IsViewsHosted() const { return false; }
+
+  // Returns true if the RootWindow is Alloy style, otherwise Chrome style.
+  bool IsAlloyStyle() const { return use_alloy_style_; }
 
   // Initialize as a normal window. This will create and show a native window
   // hosting a single browser instance. This method may be called on any thread.
@@ -219,22 +209,18 @@ class RootWindow
   // Returns true if this window is using windowless rendering (osr).
   virtual bool WithWindowlessRendering() const = 0;
 
-  // Returns true if this window is hosting an extension app.
-  virtual bool WithExtension() const = 0;
-
-  // Called when the set of loaded extensions changes. The default
-  // implementation will create a single window instance for each extension.
-  virtual void OnExtensionsChanged(const ExtensionSet& extensions);
-
  protected:
   // Allow deletion via scoped_refptr only.
   friend struct DeleteOnMainThread;
   friend class base::RefCountedThreadSafe<RootWindow, DeleteOnMainThread>;
 
-  RootWindow();
+  explicit RootWindow(bool use_alloy_style);
   virtual ~RootWindow();
 
   Delegate* delegate_ = nullptr;
+
+ private:
+  const bool use_alloy_style_;
 };
 
 }  // namespace client

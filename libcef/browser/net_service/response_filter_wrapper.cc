@@ -2,7 +2,7 @@
 // reserved. Use of this source code is governed by a BSD-style license that
 // can be found in the LICENSE file.
 
-#include "libcef/browser/net_service/response_filter_wrapper.h"
+#include "cef/libcef/browser/net_service/response_filter_wrapper.h"
 
 #include <queue>
 
@@ -93,7 +93,7 @@ bool ResponseFilterWrapper::CreateOutputHandle(
 void ResponseFilterWrapper::OnSourceReadable(MojoResult,
                                              const mojo::HandleSignalsState&) {
   const void* buffer = nullptr;
-  uint32_t read_bytes = 0;
+  size_t read_bytes = 0;
   MojoResult result = source_handle_->BeginReadData(&buffer, &read_bytes,
                                                     MOJO_READ_DATA_FLAG_NONE);
   if (result == MOJO_RESULT_SHOULD_WAIT) {
@@ -215,7 +215,7 @@ void ResponseFilterWrapper::Write(std::unique_ptr<std::string> data) {
 
   write_pending_ = true;
 
-  base::StringPiece string_piece(*data);
+  std::string_view string_piece(*data);
   forwarder_->Write(std::make_unique<mojo::StringDataSource>(
                         string_piece, mojo::StringDataSource::AsyncWritingMode::
                                           STRING_STAYS_VALID_UNTIL_COMPLETION),

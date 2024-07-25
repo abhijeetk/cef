@@ -37,9 +37,7 @@ extern const char kAlwaysOnTop[];
 extern const char kHideTopMenu[];
 extern const char kSslClientCertificate[];
 extern const char kCRLSetsPath[];
-extern const char kLoadExtension[];
 extern const char kNoActivate[];
-extern const char kEnableChromeRuntime[];
 extern const char kShowChromeToolbar[];
 extern const char kInitialShowState[];
 extern const char kUseDefaultPopup[];
@@ -51,6 +49,9 @@ extern const char kUseBottomControls[];
 extern const char kHidePipFrame[];
 extern const char kHideChromeBubbles[];
 extern const char kHideWindowOnClose[];
+extern const char kAcceptsFirstMouse[];
+extern const char kUseAlloyStyle[];
+extern const char kUseChromeStyleWindow[];
 
 }  // namespace client::switches
 

@@ -3,15 +3,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "libcef/browser/osr/web_contents_view_osr.h"
+#include "cef/libcef/browser/osr/web_contents_view_osr.h"
 
-#include "libcef/browser/alloy/alloy_browser_host_impl.h"
-#include "libcef/browser/osr/render_widget_host_view_osr.h"
-#include "libcef/browser/osr/touch_selection_controller_client_osr.h"
-#include "libcef/common/drag_data_impl.h"
-
-#include "content/browser/browser_plugin/browser_plugin_embedder.h"
-#include "content/browser/browser_plugin/browser_plugin_guest.h"
+#include "cef/libcef/browser/alloy/alloy_browser_host_impl.h"
+#include "cef/libcef/browser/osr/render_widget_host_view_osr.h"
+#include "cef/libcef/browser/osr/touch_selection_controller_client_osr.h"
+#include "cef/libcef/common/drag_data_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/render_widget_host.h"
 
@@ -33,14 +30,27 @@ void CefWebContentsViewOSR::WebContentsCreated(
 }
 
 void CefWebContentsViewOSR::RenderViewCreated() {
-  if (web_contents_) {
-    auto host = web_contents_->GetRenderViewHost();
-    CefRenderWidgetHostViewOSR* view =
-        static_cast<CefRenderWidgetHostViewOSR*>(host->GetWidget()->GetView());
-    if (view) {
-      view->InstallTransparency();
-    }
+  if (auto* view = GetView()) {
+    view->InstallTransparency();
   }
+}
+
+gfx::NativeView CefWebContentsViewOSR::GetNativeView() const {
+  // TODO(osr): Fix all calling code paths and convert to DCHECK.
+  NOTIMPLEMENTED();
+  return gfx::NativeView();
+}
+
+gfx::NativeView CefWebContentsViewOSR::GetContentNativeView() const {
+  // TODO(osr): Fix all calling code paths and convert to DCHECK.
+  NOTIMPLEMENTED();
+  return gfx::NativeView();
+}
+
+gfx::NativeWindow CefWebContentsViewOSR::GetTopLevelNativeWindow() const {
+  // TODO(osr): Fix all calling code paths and convert to DCHECK.
+  NOTIMPLEMENTED();
+  return gfx::NativeWindow();
 }
 
 gfx::Rect CefWebContentsViewOSR::GetContainerBounds() const {

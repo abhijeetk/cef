@@ -64,34 +64,16 @@ MainContextImpl::MainContextImpl(CefRefPtr<CefCommandLine> command_line,
       use_windowless_rendering_ &&
       command_line_->HasSwitch(switches::kTransparentPaintingEnabled);
 
-#if defined(OS_WIN)
-  // Shared texture is only supported on Windows.
   shared_texture_enabled_ =
       use_windowless_rendering_ &&
       command_line_->HasSwitch(switches::kSharedTextureEnabled);
-#endif
 
   external_begin_frame_enabled_ =
       use_windowless_rendering_ &&
       command_line_->HasSwitch(switches::kExternalBeginFrameEnabled);
 
   if (windowless_frame_rate_ <= 0) {
-// Choose a reasonable default rate based on the OSR mode.
-#if defined(OS_WIN)
     windowless_frame_rate_ = shared_texture_enabled_ ? 60 : 30;
-#else
-    windowless_frame_rate_ = 30;
-#endif
-  }
-
-  // Enable experimental Chrome runtime. See issue #2969 for details.
-  use_chrome_runtime_ =
-      command_line_->HasSwitch(switches::kEnableChromeRuntime);
-
-  if (use_windowless_rendering_ && use_chrome_runtime_) {
-    LOG(ERROR)
-        << "Windowless rendering is not supported with the Chrome runtime.";
-    use_chrome_runtime_ = false;
   }
 
   // Whether the Views framework will be used.
@@ -103,30 +85,35 @@ MainContextImpl::MainContextImpl(CefRefPtr<CefCommandLine> command_line,
     use_views_ = false;
   }
 
-#if defined(OS_WIN) || defined(OS_LINUX)
-  use_chrome_runtime_native_ =
-      use_chrome_runtime_ && command_line->HasSwitch(switches::kUseNative);
-  if (use_chrome_runtime_ && !use_views_ && !use_chrome_runtime_native_) {
+  // Whether Alloy style will be used.
+  use_alloy_style_ = command_line_->HasSwitch(switches::kUseAlloyStyle);
+
+  if (use_windowless_rendering_ && !use_alloy_style_) {
+    LOG(WARNING) << "Windowless rendering requires Alloy style.";
+    use_alloy_style_ = true;
+  }
+
+  // Whether to use a native parent window.
+  const bool use_chrome_native_parent =
+      command_line->HasSwitch(switches::kUseNative);
+
+#if defined(OS_MAC)
+  if (use_chrome_native_parent && !use_alloy_style_) {
+    // MacOS does not support Chrome style with native parent. See issue #3294.
+    LOG(WARNING) << "Native parent on MacOS requires Alloy style";
+    use_alloy_style_ = true;
+  }
+#endif
+
+  if (!use_views_ && !use_chrome_native_parent && !use_windowless_rendering_) {
     LOG(WARNING) << "Chrome runtime defaults to the Views framework.";
     use_views_ = true;
   }
-#else   // !(defined(OS_WIN) || defined(OS_LINUX))
-  if (use_chrome_runtime_ && !use_views_) {
-    // TODO(chrome): Add support for this runtime configuration (e.g. a fully
-    // styled Chrome window with cefclient menu customizations). In the mean
-    // time this can be demo'd with "cefsimple --enable-chrome-runtime".
-    LOG(WARNING) << "Chrome runtime requires the Views framework.";
-    use_views_ = true;
-  }
-#endif  // !(defined(OS_WIN) || defined(OS_LINUX))
 
   if (command_line_->HasSwitch(switches::kBackgroundColor)) {
     // Parse the background color value.
     background_color_ =
         ParseColor(command_line_->GetSwitchValue(switches::kBackgroundColor));
-  } else if (command_line_->HasSwitch("force-dark-mode")) {
-    // Use black background color by default with dark mode.
-    background_color_ = ParseColor("black");
   }
 
   if (background_color_ == 0 && !use_views_) {
@@ -138,6 +125,13 @@ MainContextImpl::MainContextImpl(CefRefPtr<CefCommandLine> command_line,
   if (!use_transparent_painting) {
     browser_background_color_ = background_color_;
   }
+
+  // Log the current configuration.
+  LOG(WARNING) << "Using " << (use_alloy_style_ ? "Alloy" : "Chrome")
+               << " style; " << (use_views_ ? "Views" : "Native")
+               << "-hosted window; "
+               << (use_windowless_rendering_ ? "Windowless" : "Windowed")
+               << " rendering (not a warning)";
 }
 
 MainContextImpl::~MainContextImpl() {
@@ -174,20 +168,12 @@ cef_color_t MainContextImpl::GetBackgroundColor() {
   return background_color_;
 }
 
-bool MainContextImpl::UseChromeRuntime() {
-  return use_chrome_runtime_;
-}
-
-bool MainContextImpl::UseChromeRuntimeNative() {
-  return use_chrome_runtime_native_;
-}
-
-bool MainContextImpl::UseViews() {
+bool MainContextImpl::UseViewsGlobal() {
   return use_views_;
 }
 
-bool MainContextImpl::UseWindowlessRendering() {
-  return use_windowless_rendering_;
+bool MainContextImpl::UseAlloyStyleGlobal() {
+  return use_alloy_style_;
 }
 
 bool MainContextImpl::TouchEventsEnabled() {
@@ -201,10 +187,6 @@ bool MainContextImpl::UseDefaultPopup() {
 
 void MainContextImpl::PopulateSettings(CefSettings* settings) {
   client::ClientAppBrowser::PopulateSettings(command_line_, *settings);
-
-  if (use_chrome_runtime_) {
-    settings->chrome_runtime = true;
-  }
 
   CefString(&settings->cache_path) =
       command_line_->GetSwitchValue(switches::kCachePath);
@@ -248,8 +230,7 @@ void MainContextImpl::PopulateBrowserSettings(CefBrowserSettings* settings) {
     settings->background_color = browser_background_color_;
   }
 
-  if (use_chrome_runtime_ &&
-      command_line_->HasSwitch(switches::kHideChromeBubbles)) {
+  if (command_line_->HasSwitch(switches::kHideChromeBubbles)) {
     settings->chrome_status_bubble = STATE_DISABLED;
     settings->chrome_zoom_bubble = STATE_DISABLED;
   }
@@ -259,9 +240,7 @@ void MainContextImpl::PopulateOsrSettings(OsrRendererSettings* settings) {
   settings->show_update_rect =
       command_line_->HasSwitch(switches::kShowUpdateRect);
 
-#if defined(OS_WIN)
   settings->shared_texture_enabled = shared_texture_enabled_;
-#endif
   settings->external_begin_frame_enabled = external_begin_frame_enabled_;
   settings->begin_frame_rate = windowless_frame_rate_;
 

@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be found
 // in the LICENSE file.
 
-#include "libcef/browser/views/window_view.h"
+#include "cef/libcef/browser/views/window_view.h"
 
 #include <memory>
+
+#include "base/memory/raw_ptr.h"
 
 #if BUILDFLAG(IS_LINUX)
 #include "ui/base/ozone_buildflags.h"
@@ -14,12 +16,11 @@
 #endif
 #endif
 
-#include "libcef/browser/chrome/views/chrome_browser_frame.h"
-#include "libcef/browser/geometry_util.h"
-#include "libcef/browser/image_impl.h"
-#include "libcef/browser/views/window_impl.h"
-#include "libcef/features/runtime.h"
-
+#include "base/ranges/algorithm.h"
+#include "cef/libcef/browser/geometry_util.h"
+#include "cef/libcef/browser/image_impl.h"
+#include "cef/libcef/browser/views/widget.h"
+#include "cef/libcef/browser/views/window_impl.h"
 #include "ui/base/hit_test.h"
 #include "ui/display/screen.h"
 #include "ui/views/widget/widget.h"
@@ -37,9 +38,6 @@
 #endif
 
 #if BUILDFLAG(IS_WIN)
-#include <dwmapi.h>
-
-#include "base/win/windows_version.h"
 #include "ui/display/win/screen_win.h"
 #include "ui/views/win/hwnd_util.h"
 #endif
@@ -55,30 +53,29 @@ class ClientViewEx : public views::ClientView {
  public:
   ClientViewEx(views::Widget* widget,
                views::View* contents_view,
-               CefWindowView::Delegate* window_delegate)
-      : views::ClientView(widget, contents_view),
-        window_delegate_(window_delegate) {
-    DCHECK(window_delegate_);
-  }
+               base::WeakPtr<CefWindowView> view)
+      : views::ClientView(widget, contents_view), view_(std::move(view)) {}
 
   ClientViewEx(const ClientViewEx&) = delete;
   ClientViewEx& operator=(const ClientViewEx&) = delete;
 
   views::CloseRequestResult OnWindowCloseRequested() override {
-    return window_delegate_->CanWidgetClose()
+    return view_->window_delegate()->CanWidgetClose()
                ? views::CloseRequestResult::kCanClose
                : views::CloseRequestResult::kCannotClose;
   }
 
  private:
-  CefWindowView::Delegate* window_delegate_;  // Not owned by this object.
+  const base::WeakPtr<CefWindowView> view_;
 };
 
 // Extend NativeFrameView with draggable region handling.
 class NativeFrameViewEx : public views::NativeFrameView {
  public:
-  NativeFrameViewEx(views::Widget* widget, CefWindowView* view)
-      : views::NativeFrameView(widget), widget_(widget), view_(view) {}
+  NativeFrameViewEx(views::Widget* widget, base::WeakPtr<CefWindowView> view)
+      : views::NativeFrameView(widget),
+        widget_(widget),
+        view_(std::move(view)) {}
 
   NativeFrameViewEx(const NativeFrameViewEx&) = delete;
   NativeFrameViewEx& operator=(const NativeFrameViewEx&) = delete;
@@ -147,29 +144,15 @@ class NativeFrameViewEx : public views::NativeFrameView {
     return views::NativeFrameView::NonClientHitTest(point);
   }
 
-#if BUILDFLAG(IS_WIN)
   void OnThemeChanged() override {
     views::NativeFrameView::OnThemeChanged();
-
-    // Value was 19 prior to Windows 10 20H1, according to
-    // https://stackoverflow.com/a/70693198
-    const DWORD dwAttribute =
-        base::win::GetVersion() >= base::win::Version::WIN10_20H1
-            ? DWMWA_USE_IMMERSIVE_DARK_MODE
-            : 19;
-
-    // From BrowserFrameViewWin::SetSystemMicaTitlebarAttributes:
-    const BOOL dark_titlebar_enabled = GetNativeTheme()->ShouldUseDarkColors();
-    DwmSetWindowAttribute(views::HWNDForWidget(widget_), dwAttribute,
-                          &dark_titlebar_enabled,
-                          sizeof(dark_titlebar_enabled));
+    view_util::UpdateTitlebarTheme(widget_);
   }
-#endif
 
  private:
   // Not owned by this object.
-  views::Widget* widget_;
-  CefWindowView* view_;
+  raw_ptr<views::Widget> widget_;
+  const base::WeakPtr<CefWindowView> view_;
 };
 
 // The area inside the frame border that can be clicked and dragged for resizing
@@ -184,8 +167,8 @@ const int kResizeAreaCornerSize = 16;
 // with a resizable border. Based on AppWindowFrameView and CustomFrameView.
 class CaptionlessFrameView : public views::NonClientFrameView {
  public:
-  CaptionlessFrameView(views::Widget* widget, CefWindowView* view)
-      : widget_(widget), view_(view) {}
+  CaptionlessFrameView(views::Widget* widget, base::WeakPtr<CefWindowView> view)
+      : widget_(widget), view_(std::move(view)) {}
 
   CaptionlessFrameView(const CaptionlessFrameView&) = delete;
   CaptionlessFrameView& operator=(const CaptionlessFrameView&) = delete;
@@ -269,7 +252,8 @@ class CaptionlessFrameView : public views::NonClientFrameView {
     LayoutSuperclass<views::NonClientFrameView>(this);
   }
 
-  gfx::Size CalculatePreferredSize() const override {
+  gfx::Size CalculatePreferredSize(
+      const views::SizeBounds& available_size) const override {
     return widget_->non_client_view()
         ->GetWindowBoundsForClientBounds(
             gfx::Rect(widget_->client_view()->GetPreferredSize()))
@@ -301,8 +285,8 @@ class CaptionlessFrameView : public views::NonClientFrameView {
   }
 
   // Not owned by this object.
-  views::Widget* widget_;
-  CefWindowView* view_;
+  raw_ptr<views::Widget> widget_;
+  const base::WeakPtr<CefWindowView> view_;
 
   // The bounds of the client view, in this view's coordinates.
   gfx::Rect client_view_bounds_;
@@ -371,11 +355,28 @@ void UpdateModalDialogPosition(views::Widget* widget,
   widget->SetBounds(gfx::Rect(position, size));
 }
 
+bool ComputeAlloyStyle(CefWindowDelegate* cef_delegate) {
+  const auto default_style = CEF_RUNTIME_STYLE_CHROME;
+
+  auto result_style = default_style;
+
+  if (cef_delegate) {
+    auto requested_style = cef_delegate->GetWindowRuntimeStyle();
+    if (requested_style != CEF_RUNTIME_STYLE_DEFAULT) {
+      result_style = requested_style;
+    }
+  }
+
+  return result_style == CEF_RUNTIME_STYLE_ALLOY;
+}
+
 }  // namespace
 
 CefWindowView::CefWindowView(CefWindowDelegate* cef_delegate,
                              Delegate* window_delegate)
-    : ParentClass(cef_delegate), window_delegate_(window_delegate) {
+    : ParentClass(cef_delegate),
+      window_delegate_(window_delegate),
+      is_alloy_style_(ComputeAlloyStyle(cef_delegate)) {
   DCHECK(window_delegate_);
 }
 
@@ -384,10 +385,11 @@ void CefWindowView::CreateWidget(gfx::AcceleratedWidget parent_widget) {
 
   // |widget| is owned by the NativeWidget and will be destroyed in response to
   // a native destruction message.
-  views::Widget* widget = cef::IsChromeRuntimeEnabled() ? new ChromeBrowserFrame
-                                                        : new views::Widget;
+  CefWidget* cef_widget = CefWidget::Create(this);
+  views::Widget* widget = cef_widget->GetWidget();
 
-  views::Widget::InitParams params;
+  views::Widget::InitParams params(
+      views::Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET);
   params.delegate = this;
 
   views::Widget* host_widget = nullptr;
@@ -415,8 +417,8 @@ void CefWindowView::CreateWidget(gfx::AcceleratedWidget parent_widget) {
     params.type = views::Widget::InitParams::TYPE_WINDOW;
   }
 
-  // WidgetDelegate::DeleteDelegate() will delete |this| after executing the
-  // registered callback.
+  // Cause WidgetDelegate::DeleteDelegate() to delete |this| after executing the
+  // registered DeleteDelegate callback.
   SetOwnedByWidget(true);
   RegisterDeleteDelegateCallback(
       base::BindOnce(&CefWindowView::DeleteDelegate, base::Unretained(this)));
@@ -507,7 +509,7 @@ void CefWindowView::CreateWidget(gfx::AcceleratedWidget parent_widget) {
 
   if (params.bounds.IsEmpty()) {
     // The window will be placed on the default screen with origin (0,0).
-    params.bounds = gfx::Rect(CalculatePreferredSize());
+    params.bounds = gfx::Rect(CalculatePreferredSize({}));
     if (params.bounds.IsEmpty()) {
       // Choose a reasonable default size.
       params.bounds.set_size({800, 600});
@@ -541,6 +543,8 @@ void CefWindowView::CreateWidget(gfx::AcceleratedWidget parent_widget) {
     // |widget| must be activatable for focus handling to work correctly.
     DCHECK(widget->widget_delegate()->CanActivate());
   }
+
+  cef_widget->Initialized();
 
 #if BUILDFLAG(IS_LINUX)
 #if BUILDFLAG(IS_OZONE_X11)
@@ -602,6 +606,9 @@ CefRefPtr<CefWindow> CefWindowView::GetCefWindow() const {
 }
 
 void CefWindowView::DeleteDelegate() {
+  // Any overlays should already be removed.
+  DCHECK(overlay_hosts_.empty());
+
   // Remove all child Views before deleting the Window so that notifications
   // resolve correctly.
   RemoveAllChildViews();
@@ -648,6 +655,14 @@ ui::ImageModel CefWindowView::GetWindowAppIcon() {
 }
 
 void CefWindowView::WindowClosing() {
+  // Close any overlays now, before the Widget is destroyed.
+  // Use a copy of the array because the original may be modified while
+  // iterating.
+  std::vector<raw_ptr<CefOverlayViewHost>> overlay_hosts = overlay_hosts_;
+  for (auto& overlay_host : overlay_hosts) {
+    overlay_host->Close();
+  }
+
 #if BUILDFLAG(IS_LINUX)
 #if BUILDFLAG(IS_OZONE_X11)
   if (host_widget()) {
@@ -663,6 +678,8 @@ void CefWindowView::WindowClosing() {
 #endif
 
   window_delegate_->OnWindowClosing();
+
+  views::WidgetDelegateView::WindowClosing();
 }
 
 views::View* CefWindowView::GetContentsView() {
@@ -672,18 +689,21 @@ views::View* CefWindowView::GetContentsView() {
 }
 
 views::ClientView* CefWindowView::CreateClientView(views::Widget* widget) {
-  return new ClientViewEx(widget, GetContentsView(), window_delegate_);
+  return new ClientViewEx(widget, GetContentsView(),
+                          weak_ptr_factory_.GetWeakPtr());
 }
 
 std::unique_ptr<views::NonClientFrameView>
 CefWindowView::CreateNonClientFrameView(views::Widget* widget) {
   if (is_frameless_) {
     // Custom frame type that doesn't render a caption.
-    return std::make_unique<CaptionlessFrameView>(widget, this);
+    return std::make_unique<CaptionlessFrameView>(
+        widget, weak_ptr_factory_.GetWeakPtr());
   } else if (widget->ShouldUseNativeFrame()) {
     // DesktopNativeWidgetAura::CreateNonClientFrameView() returns
     // NativeFrameView by default. Extend that type.
-    return std::make_unique<NativeFrameViewEx>(widget, this);
+    return std::make_unique<NativeFrameViewEx>(widget,
+                                               weak_ptr_factory_.GetWeakPtr());
   }
 
   // Use Chromium provided CustomFrameView. In case if we would like to
@@ -716,7 +736,7 @@ bool CefWindowView::MaybeGetMinimumSize(gfx::Size* size) const {
   // Resize is disabled on Linux by returning the preferred size as the min/max
   // size.
   if (!CanResize()) {
-    *size = CalculatePreferredSize();
+    *size = CalculatePreferredSize({});
     return true;
   }
 #endif
@@ -728,7 +748,7 @@ bool CefWindowView::MaybeGetMaximumSize(gfx::Size* size) const {
   // Resize is disabled on Linux by returning the preferred size as the min/max
   // size.
   if (!CanResize()) {
-    *size = CalculatePreferredSize();
+    *size = CalculatePreferredSize({});
     return true;
   }
 #endif
@@ -747,6 +767,20 @@ void CefWindowView::ViewHierarchyChanged(
   ParentClass::ViewHierarchyChanged(details);
 }
 
+void CefWindowView::OnThemeChanged() {
+  bool initialized = false;
+  if (auto* cef_widget = CefWidget::GetForWidget(GetWidget())) {
+    initialized = cef_widget->IsInitialized();
+  }
+
+  if (!initialized) {
+    // Skip the CefViewView logic.
+    views::WidgetDelegateView::OnThemeChanged();
+  } else {
+    ParentClass::OnThemeChanged();
+  }
+}
+
 void CefWindowView::OnWidgetActivationChanged(views::Widget* widget,
                                               bool active) {
   if (cef_delegate()) {
@@ -756,7 +790,11 @@ void CefWindowView::OnWidgetActivationChanged(views::Widget* widget,
 
 void CefWindowView::OnWidgetBoundsChanged(views::Widget* widget,
                                           const gfx::Rect& new_bounds) {
-  MoveOverlaysIfNecessary();
+  // Size is set to zero when the host Widget is hidden. We don't need to move
+  // overlays in that case.
+  if (!new_bounds.IsEmpty()) {
+    MoveOverlaysIfNecessary();
+  }
 
   if (cef_delegate()) {
     cef_delegate()->OnWindowBoundsChanged(
@@ -818,16 +856,28 @@ CefRefPtr<CefOverlayController> CefWindowView::AddOverlayView(
     // Owned by the View hierarchy. Acts as a z-order reference for the overlay.
     auto overlay_host_view = AddChildView(std::make_unique<views::View>());
 
-    overlay_hosts_.push_back(
-        std::make_unique<CefOverlayViewHost>(this, docking_mode));
+    // Owned by the resulting Widget, after calling Init().
+    auto* overlay_host = new CefOverlayViewHost(this, docking_mode);
+    overlay_hosts_.push_back(overlay_host);
 
-    auto& overlay_host = overlay_hosts_.back();
     overlay_host->Init(overlay_host_view, view, can_activate);
 
     return overlay_host->controller();
   }
 
   return nullptr;
+}
+
+void CefWindowView::RemoveOverlayView(CefOverlayViewHost* host,
+                                      views::View* host_view) {
+  DCHECK_EQ(host_view->parent(), this);
+  RemoveChildView(host_view);
+
+  const auto it = base::ranges::find_if(
+      overlay_hosts_,
+      [host](CefOverlayViewHost* current) { return current == host; });
+  DCHECK(it != overlay_hosts_.end());
+  overlay_hosts_.erase(it);
 }
 
 void CefWindowView::MoveOverlaysIfNecessary() {
@@ -985,4 +1035,10 @@ std::optional<float> CefWindowView::GetTitlebarHeight(bool required) const {
 #endif
 
   return std::nullopt;
+}
+
+void CefWindowView::OnThemeColorsChanged(bool chrome_theme) {
+  if (cef_delegate()) {
+    cef_delegate()->OnThemeColorsChanged(GetCefWindow(), chrome_theme);
+  }
 }

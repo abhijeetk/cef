@@ -6,12 +6,12 @@
 #define CEF_LIBCEF_BROWSER_CHROME_VIEWS_CHROME_BROWSER_VIEW_H_
 #pragma once
 
-#include "include/views/cef_browser_view.h"
-#include "include/views/cef_browser_view_delegate.h"
-#include "libcef/browser/chrome/views/toolbar_view_impl.h"
-#include "libcef/browser/views/browser_view_view.h"
-#include "libcef/browser/views/view_view.h"
-
+#include "base/memory/raw_ptr.h"
+#include "cef/include/views/cef_browser_view.h"
+#include "cef/include/views/cef_browser_view_delegate.h"
+#include "cef/libcef/browser/chrome/views/toolbar_view_impl.h"
+#include "cef/libcef/browser/views/browser_view_view.h"
+#include "cef/libcef/browser/views/view_view.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 
@@ -42,19 +42,21 @@ class ChromeBrowserView
   void ViewHierarchyChanged(
       const views::ViewHierarchyChangedDetails& details) override;
   void AddedToWidget() override;
+  void RemovedFromWidget() override;
   void OnBoundsChanged(const gfx::Rect& previous_bounds) override;
   void OnGestureEvent(ui::GestureEvent* event) override;
 
   // BrowserView methods:
   ToolbarView* OverrideCreateToolbar() override;
+  void WillDestroyToolbar() override;
 
   CefRefPtr<CefToolbarViewImpl> cef_toolbar() const { return cef_toolbar_; }
   CefBrowserViewImpl* cef_browser_view() const { return cef_browser_view_; }
 
  private:
-  CefBrowserViewImpl* const cef_browser_view_;
+  const raw_ptr<CefBrowserViewImpl> cef_browser_view_;
 
-  views::WebView* web_view_ = nullptr;
+  raw_ptr<views::WebView> web_view_ = nullptr;
 
   bool destroyed_ = false;
 

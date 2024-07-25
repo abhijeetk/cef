@@ -11,16 +11,15 @@
 #include <set>
 #include <vector>
 
-#include "include/cef_base.h"
-#include "include/cef_browser.h"
-
-#include "libcef/browser/alloy/alloy_browser_host_impl.h"
-#include "libcef/browser/osr/host_display_client_osr.h"
-#include "libcef/browser/osr/motion_event_osr.h"
-
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "build/build_config.h"
 #include "cc/layers/deadline_policy.h"
+#include "cef/include/cef_base.h"
+#include "cef/include/cef_browser.h"
+#include "cef/libcef/browser/alloy/alloy_browser_host_impl.h"
+#include "cef/libcef/browser/osr/host_display_client_osr.h"
+#include "cef/libcef/browser/osr/motion_event_osr.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "content/browser/renderer_host/input/mouse_wheel_phase_handler.h"
@@ -28,7 +27,6 @@
 #include "content/browser/renderer_host/text_input_manager.h"
 #include "content/public/browser/render_frame_metadata_provider.h"
 #include "content/public/common/widget_type.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/mojom/widget/record_content_to_visible_time_request.mojom-forward.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/cursor/mojom/cursor_type.mojom-shared.h"
@@ -190,7 +188,7 @@ class CefRenderWidgetHostViewOSR
   CreateSyntheticGestureTarget() override;
   bool TransformPointToCoordSpaceForView(
       const gfx::PointF& point,
-      RenderWidgetHostViewBase* target_view,
+      RenderWidgetHostViewInput* target_view,
       gfx::PointF* transformed_point) override;
   void DidNavigate() override;
   void SelectionChanged(const std::u16string& text,
@@ -230,7 +228,7 @@ class CefRenderWidgetHostViewOSR
 
   // ui::GestureProviderClient implementation.
   void ProcessAckedTouchEvent(
-      const content::TouchEventWithLatencyInfo& touch,
+      const input::TouchEventWithLatencyInfo& touch,
       blink::mojom::InputEventResultState ack_result) override;
   void OnGestureEvent(const ui::GestureEventData& gesture) override;
 
@@ -243,7 +241,7 @@ class CefRenderWidgetHostViewOSR
   void OnScreenInfoChanged();
   void Invalidate(CefBrowserHost::PaintElementType type);
   void SendExternalBeginFrame();
-  void SendKeyEvent(const content::NativeWebKeyboardEvent& event);
+  void SendKeyEvent(const input::NativeWebKeyboardEvent& event);
   void SendMouseEvent(const blink::WebMouseEvent& event);
   void SendMouseWheelEvent(const blink::WebMouseWheelEvent& event);
   void SendTouchEvent(const CefTouchEvent& event);
@@ -255,6 +253,9 @@ class CefRenderWidgetHostViewOSR
   void OnPaint(const gfx::Rect& damage_rect,
                const gfx::Size& pixel_size,
                const void* pixels);
+  void OnAcceleratedPaint(const gfx::Rect& damage_rect,
+                          const gfx::Size& pixel_size,
+                          const CefAcceleratedPaintInfo& info);
 
   void OnBeginFame(base::TimeTicks frame_time);
 
@@ -402,11 +403,12 @@ class CefRenderWidgetHostViewOSR
   uint64_t begin_frame_number_ = viz::BeginFrameArgs::kStartingFrameNumber;
   bool begin_frame_pending_ = false;
 
+  bool use_shared_texture_ = false;
   bool sync_frame_rate_ = false;
   bool external_begin_frame_enabled_ = false;
   bool needs_external_begin_frames_ = false;
 
-  CefHostDisplayClientOSR* host_display_client_ = nullptr;
+  raw_ptr<CefHostDisplayClientOSR> host_display_client_ = nullptr;
   std::unique_ptr<CefVideoConsumerOSR> video_consumer_;
 
   bool hold_resize_ = false;
@@ -417,13 +419,13 @@ class CefRenderWidgetHostViewOSR
   // The associated Model.  While |this| is being Destroyed,
   // |render_widget_host_| is NULL and the message loop is run one last time
   // Message handlers must check for a NULL |render_widget_host_|.
-  content::RenderWidgetHostImpl* render_widget_host_;
+  raw_ptr<content::RenderWidgetHostImpl> render_widget_host_;
 
   bool has_parent_;
-  CefRenderWidgetHostViewOSR* parent_host_view_;
-  CefRenderWidgetHostViewOSR* popup_host_view_ = nullptr;
-  CefRenderWidgetHostViewOSR* child_host_view_ = nullptr;
-  std::set<CefRenderWidgetHostViewOSR*> guest_host_views_;
+  raw_ptr<CefRenderWidgetHostViewOSR> parent_host_view_;
+  raw_ptr<CefRenderWidgetHostViewOSR> popup_host_view_ = nullptr;
+  raw_ptr<CefRenderWidgetHostViewOSR> child_host_view_ = nullptr;
+  std::set<raw_ptr<CefRenderWidgetHostViewOSR>> guest_host_views_;
 
   CefRefPtr<AlloyBrowserHostImpl> browser_impl_;
 

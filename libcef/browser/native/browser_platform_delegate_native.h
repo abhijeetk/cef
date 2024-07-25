@@ -5,7 +5,8 @@
 #ifndef CEF_LIBCEF_BROWSER_NATIVE_BROWSER_PLATFORM_DELEGATE_NATIVE_H_
 #define CEF_LIBCEF_BROWSER_NATIVE_BROWSER_PLATFORM_DELEGATE_NATIVE_H_
 
-#include "libcef/browser/alloy/browser_platform_delegate_alloy.h"
+#include "base/memory/raw_ptr.h"
+#include "cef/libcef/browser/alloy/browser_platform_delegate_alloy.h"
 
 // Base implementation of native browser functionality.
 class CefBrowserPlatformDelegateNative
@@ -33,7 +34,7 @@ class CefBrowserPlatformDelegateNative
   void WasResized() override;
 
   // Translate CEF events to Chromium/Blink Web events.
-  virtual content::NativeWebKeyboardEvent TranslateWebKeyEvent(
+  virtual input::NativeWebKeyboardEvent TranslateWebKeyEvent(
       const CefKeyEvent& key_event) const = 0;
   virtual blink::WebMouseEvent TranslateWebClickEvent(
       const CefMouseEvent& mouse_event,
@@ -70,7 +71,7 @@ class CefBrowserPlatformDelegateNative
   const SkColor background_color_;
 
   // Not owned by this object.
-  WindowlessHandler* windowless_handler_ = nullptr;
+  raw_ptr<WindowlessHandler> windowless_handler_ = nullptr;
 };
 
 #endif  // CEF_LIBCEF_BROWSER_NATIVE_BROWSER_PLATFORM_DELEGATE_NATIVE_H_

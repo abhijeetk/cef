@@ -9,10 +9,11 @@
 // implementations. See the translator.README.txt file in the tools directory
 // for more information.
 //
-// $hash=cfe4f7b7980000ea0bf223db0d717ed44e8b880b$
+// $hash=da609d625660ca617e1a01d5dc359932142e15a3$
 //
 
 #include "libcef_dll/ctocpp/views/window_delegate_ctocpp.h"
+
 #include "libcef_dll/cpptoc/views/view_cpptoc.h"
 #include "libcef_dll/cpptoc/views/window_cpptoc.h"
 #include "libcef_dll/shutdown_checker.h"
@@ -364,6 +365,32 @@ bool CefWindowDelegateCToCpp::GetTitlebarHeight(CefRefPtr<CefWindow> window,
 }
 
 NO_SANITIZE("cfi-icall")
+cef_state_t CefWindowDelegateCToCpp::AcceptsFirstMouse(
+    CefRefPtr<CefWindow> window) {
+  shutdown_checker::AssertNotShutdown();
+
+  cef_window_delegate_t* _struct = GetStruct();
+  if (CEF_MEMBER_MISSING(_struct, accepts_first_mouse)) {
+    return STATE_DEFAULT;
+  }
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Verify param: window; type: refptr_diff
+  DCHECK(window.get());
+  if (!window.get()) {
+    return STATE_DEFAULT;
+  }
+
+  // Execute
+  cef_state_t _retval =
+      _struct->accepts_first_mouse(_struct, CefWindowCppToC::Wrap(window));
+
+  // Return type: simple
+  return _retval;
+}
+
+NO_SANITIZE("cfi-icall")
 bool CefWindowDelegateCToCpp::CanResize(CefRefPtr<CefWindow> window) {
   shutdown_checker::AssertNotShutdown();
 
@@ -509,6 +536,47 @@ bool CefWindowDelegateCToCpp::OnKeyEvent(CefRefPtr<CefWindow> window,
 
   // Return type: bool
   return _retval ? true : false;
+}
+
+NO_SANITIZE("cfi-icall")
+void CefWindowDelegateCToCpp::OnThemeColorsChanged(CefRefPtr<CefWindow> window,
+                                                   bool chrome_theme) {
+  shutdown_checker::AssertNotShutdown();
+
+  cef_window_delegate_t* _struct = GetStruct();
+  if (CEF_MEMBER_MISSING(_struct, on_theme_colors_changed)) {
+    return;
+  }
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Verify param: window; type: refptr_diff
+  DCHECK(window.get());
+  if (!window.get()) {
+    return;
+  }
+
+  // Execute
+  _struct->on_theme_colors_changed(_struct, CefWindowCppToC::Wrap(window),
+                                   chrome_theme);
+}
+
+NO_SANITIZE("cfi-icall")
+cef_runtime_style_t CefWindowDelegateCToCpp::GetWindowRuntimeStyle() {
+  shutdown_checker::AssertNotShutdown();
+
+  cef_window_delegate_t* _struct = GetStruct();
+  if (CEF_MEMBER_MISSING(_struct, get_window_runtime_style)) {
+    return CEF_RUNTIME_STYLE_DEFAULT;
+  }
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Execute
+  cef_runtime_style_t _retval = _struct->get_window_runtime_style(_struct);
+
+  // Return type: simple
+  return _retval;
 }
 
 NO_SANITIZE("cfi-icall")
@@ -764,6 +832,28 @@ void CefWindowDelegateCToCpp::OnBlur(CefRefPtr<CefView> view) {
 
   // Execute
   _struct->on_blur(_struct, CefViewCppToC::Wrap(view));
+}
+
+NO_SANITIZE("cfi-icall")
+void CefWindowDelegateCToCpp::OnThemeChanged(CefRefPtr<CefView> view) {
+  shutdown_checker::AssertNotShutdown();
+
+  cef_view_delegate_t* _struct =
+      reinterpret_cast<cef_view_delegate_t*>(GetStruct());
+  if (CEF_MEMBER_MISSING(_struct, on_theme_changed)) {
+    return;
+  }
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Verify param: view; type: refptr_diff
+  DCHECK(view.get());
+  if (!view.get()) {
+    return;
+  }
+
+  // Execute
+  _struct->on_theme_changed(_struct, CefViewCppToC::Wrap(view));
 }
 
 // CONSTRUCTOR - Do not edit by hand.

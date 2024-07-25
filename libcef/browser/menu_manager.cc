@@ -2,19 +2,18 @@
 // reserved. Use of this source code is governed by a BSD-style license that can
 // be found in the LICENSE file.
 
-#include "libcef/browser/menu_manager.h"
+#include "cef/libcef/browser/menu_manager.h"
 
 #include <tuple>
 #include <utility>
 
-#include "libcef/browser/alloy/alloy_browser_host_impl.h"
-#include "libcef/browser/context_menu_params_impl.h"
-#include "libcef/browser/menu_runner.h"
-#include "libcef/browser/thread_util.h"
-#include "libcef/common/app_manager.h"
-
 #include "base/logging.h"
 #include "cef/grit/cef_strings.h"
+#include "cef/libcef/browser/alloy/alloy_browser_host_impl.h"
+#include "cef/libcef/browser/context_menu_params_impl.h"
+#include "cef/libcef/browser/menu_runner.h"
+#include "cef/libcef/browser/thread_util.h"
+#include "cef/libcef/common/app_manager.h"
 #include "chrome/grit/generated_resources.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
@@ -152,7 +151,7 @@ bool CefMenuManager::CreateContextMenu(
           new CefContextMenuParamsImpl(&params_));
       CefRefPtr<CefFrame> frame = browser_->GetFocusedFrame();
 
-      handler->OnBeforeContextMenu(browser_, frame, paramsPtr.get(),
+      handler->OnBeforeContextMenu(browser_.get(), frame, paramsPtr.get(),
                                    model_.get());
 
       MenuWillShow(model_);
@@ -167,7 +166,7 @@ bool CefMenuManager::CreateContextMenu(
         // the callback object is deleted.
         custom_menu_callback_ = callbackImpl.get();
 
-        if (handler->RunContextMenu(browser_, frame, paramsPtr.get(),
+        if (handler->RunContextMenu(browser_.get(), frame, paramsPtr.get(),
                                     model_.get(), callbackImpl.get())) {
           custom_menu = true;
         } else {
@@ -225,8 +224,8 @@ void CefMenuManager::ExecuteCommand(CefRefPtr<CefMenuModelImpl> source,
           new CefContextMenuParamsImpl(&params_));
 
       bool handled = handler->OnContextMenuCommand(
-          browser_, browser_->GetFocusedFrame(), paramsPtr.get(), command_id,
-          event_flags);
+          browser_.get(), browser_->GetFocusedFrame(), paramsPtr.get(),
+          command_id, event_flags);
 
       // Do not keep references to the parameters in the callback.
       std::ignore = paramsPtr->Detach(nullptr);
@@ -278,7 +277,8 @@ void CefMenuManager::MenuClosed(CefRefPtr<CefMenuModelImpl> source) {
   if (client.get()) {
     CefRefPtr<CefContextMenuHandler> handler = client->GetContextMenuHandler();
     if (handler.get()) {
-      handler->OnContextMenuDismissed(browser_, browser_->GetFocusedFrame());
+      handler->OnContextMenuDismissed(browser_.get(),
+                                      browser_->GetFocusedFrame());
     }
   }
 

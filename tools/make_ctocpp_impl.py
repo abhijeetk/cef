@@ -336,11 +336,6 @@ def make_ctocpp_function_impl_new(clsname, name, func, base_scoped):
     result += '\n'
   result_len = len(result)
 
-  if is_cef_shutdown:
-    result += '\n\n#if DCHECK_IS_ON()'\
-              '\n  shutdown_checker::SetIsShutdown();'\
-              '\n#endif\n'
-
   # execution
   result += '\n  // Execute\n  '
 
@@ -369,6 +364,11 @@ def make_ctocpp_function_impl_new(clsname, name, func, base_scoped):
     result += ',\n      '.join(params)
 
   result += ');\n'
+
+  if is_cef_shutdown:
+    result += '\n\n#if DCHECK_IS_ON()'\
+              '\n  shutdown_checker::SetIsShutdown();'\
+              '\n#endif\n'
 
   result_len = len(result)
 

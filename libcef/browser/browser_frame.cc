@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "libcef/browser/browser_frame.h"
+#include "cef/libcef/browser/browser_frame.h"
 
-#include "libcef/browser/browser_host_base.h"
-#include "libcef/browser/thread_util.h"
-
+#include "cef/libcef/browser/browser_host_base.h"
+#include "cef/libcef/browser/browser_info_manager.h"
+#include "cef/libcef/browser/thread_util.h"
+#include "cef/libcef/common/frame_util.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
@@ -57,26 +58,31 @@ void CefBrowserFrame::FrameAttached(
     bool reattached) {
   // Always send to the newly created RFH, which may be speculative when
   // navigating cross-origin.
-  if (auto host = GetFrameHost(/*prefer_speculative=*/true)) {
+  bool is_excluded;
+  if (auto host = GetFrameHost(/*prefer_speculative=*/true, &is_excluded)) {
     host->FrameAttached(std::move(render_frame), reattached);
+  } else if (is_excluded) {
+    VLOG(1) << "frame "
+            << frame_util::GetFrameDebugString(
+                   render_frame_host()->GetGlobalFrameToken())
+            << " attach denied";
+    mojo::Remote<cef::mojom::RenderFrame> render_frame_remote;
+    render_frame_remote.Bind(std::move(render_frame));
+    render_frame_remote->FrameAttachedAck(/*allow=*/false);
   }
 }
 
 void CefBrowserFrame::UpdateDraggableRegions(
-    absl::optional<std::vector<cef::mojom::DraggableRegionEntryPtr>> regions) {
-  if (auto host = GetFrameHost()) {
+    std::optional<std::vector<cef::mojom::DraggableRegionEntryPtr>> regions) {
+  if (auto host = GetFrameHost(/*prefer_speculative=*/false)) {
     host->UpdateDraggableRegions(std::move(regions));
   }
 }
 
 CefRefPtr<CefFrameHostImpl> CefBrowserFrame::GetFrameHost(
-    bool prefer_speculative) const {
-  CEF_REQUIRE_UIT();
-  auto rfh = render_frame_host();
-  if (auto browser = CefBrowserHostBase::GetBrowserForHost(rfh)) {
-    return browser->browser_info()->GetFrameForHost(rfh, nullptr,
-                                                    prefer_speculative);
-  }
-  DCHECK(false);
-  return nullptr;
+    bool prefer_speculative,
+    bool* is_excluded) const {
+  return CefBrowserInfoManager::GetFrameHost(
+      render_frame_host(), prefer_speculative,
+      /*browser_info=*/nullptr, is_excluded);
 }

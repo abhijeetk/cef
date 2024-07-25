@@ -1,8 +1,8 @@
 diff --git base/command_line.cc base/command_line.cc
-index 69e4303165259..682e8d2bfa6ce 100644
+index 1e5e33b0c156d..be0ccb28fc627 100644
 --- base/command_line.cc
 +++ base/command_line.cc
-@@ -355,11 +355,10 @@ void CommandLine::AppendSwitchNative(StringPiece switch_string,
+@@ -389,11 +389,10 @@ void CommandLine::AppendSwitchNative(std::string_view switch_string,
  #if BUILDFLAG(ENABLE_COMMANDLINE_SEQUENCE_CHECKS)
    sequence_checker_.Check();
  #endif
@@ -11,7 +11,7 @@ index 69e4303165259..682e8d2bfa6ce 100644
 +#if BUILDFLAG(IS_WIN)
    StringType combined_switch_string(UTF8ToWide(switch_key));
  #elif BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
--  StringPiece switch_key = switch_string;
+-  std::string_view switch_key = switch_string;
    StringType combined_switch_string(switch_key);
  #endif
    size_t prefix_length = GetSwitchPrefixLength(combined_switch_string);

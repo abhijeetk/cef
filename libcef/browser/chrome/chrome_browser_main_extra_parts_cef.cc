@@ -2,17 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "libcef/browser/chrome/chrome_browser_main_extra_parts_cef.h"
-
-#include "libcef/browser/chrome/chrome_context_menu_handler.h"
-#include "libcef/browser/chrome/chrome_startup_browser_creator.h"
-#include "libcef/browser/context.h"
-#include "libcef/browser/file_dialog_runner.h"
-#include "libcef/browser/net/chrome_scheme_handler.h"
-#include "libcef/browser/permission_prompt.h"
+#include "cef/libcef/browser/chrome/chrome_browser_main_extra_parts_cef.h"
 
 #include "base/task/thread_pool.h"
+#include "cef/libcef/browser/alloy/dialogs/alloy_constrained_window_views_client.h"
+#include "cef/libcef/browser/chrome/chrome_context_menu_handler.h"
+#include "cef/libcef/browser/chrome/chrome_startup_browser_creator.h"
+#include "cef/libcef/browser/context.h"
+#include "cef/libcef/browser/file_dialog_runner.h"
+#include "cef/libcef/browser/permission_prompt.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/views/chrome_constrained_window_views_client.h"
+#include "components/constrained_window/constrained_window_views.h"
 
 #if BUILDFLAG(IS_LINUX)
 #include "base/linux_util.h"
@@ -66,8 +67,7 @@ void ChromeBrowserMainExtraPartsCef::PreMainMessageLoopRun() {
       {base::TaskPriority::USER_BLOCKING,
        base::TaskShutdownBehavior::BLOCK_SHUTDOWN, base::MayBlock()});
 
-  scheme::RegisterWebUIControllerFactory();
-  context_menu::RegisterMenuCreatedCallback();
+  context_menu::RegisterCallbacks();
   file_dialog_runner::RegisterFactory();
   permission_prompt::RegisterCreateCallback();
 
@@ -77,4 +77,10 @@ void ChromeBrowserMainExtraPartsCef::PreMainMessageLoopRun() {
     SetExeAppIconResourceId(settings.chrome_app_icon_id);
   }
 #endif
+}
+
+void ChromeBrowserMainExtraPartsCef::ToolkitInitialized() {
+  // Override the default Chrome client.
+  SetConstrainedWindowViewsClient(CreateAlloyConstrainedWindowViewsClient(
+      CreateChromeConstrainedWindowViewsClient()));
 }

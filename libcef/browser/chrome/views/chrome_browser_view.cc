@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be found
 // in the LICENSE file.
 
-#include "libcef/browser/chrome/views/chrome_browser_view.h"
+#include "cef/libcef/browser/chrome/views/chrome_browser_view.h"
 
-#include "libcef/browser/chrome/views/chrome_browser_frame.h"
-#include "libcef/browser/views/browser_view_impl.h"
+#include "cef/libcef/browser/chrome/views/chrome_browser_frame.h"
+#include "cef/libcef/browser/views/browser_view_impl.h"
 
 ChromeBrowserView::ChromeBrowserView(CefBrowserViewImpl* cef_browser_view)
     : ParentClass(cef_browser_view->delegate()),
@@ -52,8 +52,14 @@ void ChromeBrowserView::ViewHierarchyChanged(
 }
 
 void ChromeBrowserView::AddedToWidget() {
+  // Create the Browser and ChromeBrowserHostImpl.
   // Results in a call to InitBrowser which calls ParentClass::AddedToWidget.
-  cef_browser_view_->OnBrowserViewAdded();
+  cef_browser_view_->AddedToWidget();
+}
+
+void ChromeBrowserView::RemovedFromWidget() {
+  ParentClass::RemovedFromWidget();
+  cef_browser_view_->RemovedFromWidget();
 }
 
 void ChromeBrowserView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
@@ -70,8 +76,9 @@ void ChromeBrowserView::OnGestureEvent(ui::GestureEvent* event) {
 
 ToolbarView* ChromeBrowserView::OverrideCreateToolbar() {
   if (cef_delegate()) {
-    auto toolbar_type = cef_delegate()->GetChromeToolbarType(cef_browser_view_);
-    absl::optional<ToolbarView::DisplayMode> display_mode;
+    auto toolbar_type =
+        cef_delegate()->GetChromeToolbarType(cef_browser_view_.get());
+    std::optional<ToolbarView::DisplayMode> display_mode;
     switch (toolbar_type) {
       case CEF_CTT_NORMAL:
         display_mode = ToolbarView::DisplayMode::NORMAL;
@@ -92,4 +99,12 @@ ToolbarView* ChromeBrowserView::OverrideCreateToolbar() {
   }
 
   return nullptr;
+}
+
+void ChromeBrowserView::WillDestroyToolbar() {
+  BrowserView::WillDestroyToolbar();
+  if (cef_toolbar_) {
+    cef_toolbar_->Destroyed();
+    cef_toolbar_ = nullptr;
+  }
 }

@@ -2,21 +2,20 @@
 // reserved. Use of this source code is governed by a BSD-style license that can
 // be found in the LICENSE file.
 
-#include "libcef/browser/context.h"
+#include "cef/libcef/browser/context.h"
 
 #include <memory>
-
-#include "libcef/browser/browser_info_manager.h"
-#include "libcef/browser/request_context_impl.h"
-#include "libcef/browser/thread_util.h"
-#include "libcef/browser/trace_subscriber.h"
-#include "libcef/common/cef_switches.h"
 
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/run_loop.h"
 #include "base/task/current_thread.h"
 #include "base/threading/thread_restrictions.h"
+#include "cef/libcef/browser/browser_info_manager.h"
+#include "cef/libcef/browser/request_context_impl.h"
+#include "cef/libcef/browser/thread_util.h"
+#include "cef/libcef/browser/trace_subscriber.h"
+#include "cef/libcef/common/cef_switches.h"
 #include "components/network_session_configurator/common/network_switches.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
@@ -25,14 +24,17 @@
 #if BUILDFLAG(IS_WIN)
 #include "base/debug/alias.h"
 #include "base/strings/utf_string_conversions.h"
+#include "cef/include/internal/cef_win.h"
 #include "chrome/chrome_elf/chrome_elf_main.h"
 #include "chrome/install_static/initialize_from_primary_module.h"
-#include "include/internal/cef_win.h"
 #endif
 
 namespace {
 
 CefContext* g_context = nullptr;
+
+// Invalid value before CefInitialize is called.
+int g_exit_code = -1;
 
 #if DCHECK_IS_ON()
 // When the process terminates check if CefShutdown() has been called.
@@ -101,13 +103,28 @@ base::FilePath NormalizePath(const cef_string_t& path_str,
     path = path.StripTrailingSeparators();
   }
 
-  if (!path.empty() && !path.IsAbsolute()) {
-    LOG(ERROR) << "The " << name << " directory (" << path.value()
-               << ") is not an absolute path. Defaulting to empty.";
-    if (has_error) {
-      *has_error = true;
+  if (!path.empty()) {
+    if (!path.IsAbsolute()) {
+      LOG(ERROR) << "The " << name << " directory (" << path.value()
+                 << ") is not an absolute path. Defaulting to empty.";
+      if (has_error) {
+        *has_error = true;
+      }
+      return base::FilePath();
     }
-    path = base::FilePath();
+
+#if BUILDFLAG(IS_POSIX)
+    // Always resolve symlinks to absolute paths. This avoids issues with
+    // mismatched paths when mixing Chromium and OS filesystem functions.
+    // See https://crbug.com/40229712.
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    const base::FilePath& resolved_path = base::MakeAbsoluteFilePath(path);
+    if (!resolved_path.empty()) {
+      return resolved_path;
+    } else if (errno != 0 && errno != ENOENT) {
+      PLOG(ERROR) << "realpath(" << path.value() << ") failed";
+    }
+#endif  // BUILDFLAG(IS_POSIX)
   }
 
   return path;
@@ -309,8 +326,11 @@ bool CefInitialize(const CefMainArgs& args,
   g_context = new CefContext();
 
   // Initialize the global context.
-  if (!g_context->Initialize(args, settings, application,
-                             windows_sandbox_info)) {
+  const bool initialized =
+      g_context->Initialize(args, settings, application, windows_sandbox_info);
+  g_exit_code = g_context->exit_code();
+
+  if (!initialized) {
     // Initialization failed. Delete the global context object.
     delete g_context;
     g_context = nullptr;
@@ -318,6 +338,11 @@ bool CefInitialize(const CefMainArgs& args,
   }
 
   return true;
+}
+
+int CefGetExitCode() {
+  DCHECK_NE(g_exit_code, -1) << "invalid call to CefGetExitCode";
+  return g_exit_code;
 }
 
 void CefShutdown() {
@@ -477,10 +502,14 @@ bool CefContext::Initialize(const CefMainArgs& args,
 
   main_runner_ = std::make_unique<CefMainRunner>(
       settings_.multi_threaded_message_loop, settings_.external_message_pump);
-  if (!main_runner_->Initialize(
-          &settings_, application, args, windows_sandbox_info, &initialized_,
-          base::BindOnce(&CefContext::OnContextInitialized,
-                         base::Unretained(this)))) {
+
+  const bool initialized = main_runner_->Initialize(
+      &settings_, application, args, windows_sandbox_info, &initialized_,
+      base::BindOnce(&CefContext::OnContextInitialized,
+                     base::Unretained(this)));
+  exit_code_ = main_runner_->exit_code();
+
+  if (!initialized) {
     shutting_down_ = true;
     FinalizeShutdown();
     return false;
@@ -560,9 +589,6 @@ void CefContext::PopulateGlobalRequestContextSettings(
   settings->persist_session_cookies =
       settings_.persist_session_cookies ||
       command_line->HasSwitch(switches::kPersistSessionCookies);
-  settings->persist_user_preferences =
-      settings_.persist_user_preferences ||
-      command_line->HasSwitch(switches::kPersistUserPreferences);
 
   CefString(&settings->cookieable_schemes_list) =
       CefString(&settings_.cookieable_schemes_list);

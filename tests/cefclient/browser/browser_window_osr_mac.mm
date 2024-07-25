@@ -4,6 +4,7 @@
 
 #include "tests/cefclient/browser/browser_window_osr_mac.h"
 
+#import <AppKit/NSAccessibility.h>
 #include <Cocoa/Cocoa.h>
 #include <OpenGL/gl.h>
 #import <objc/runtime.h>
@@ -18,8 +19,6 @@
 #include "tests/cefclient/browser/text_input_client_osr_mac.h"
 #include "tests/shared/browser/geometry_util.h"
 #include "tests/shared/browser/main_message_loop.h"
-
-#import <AppKit/NSAccessibility.h>
 
 // Begin disable NSOpenGL deprecation warnings.
 #pragma clang diagnostic push
@@ -78,6 +77,8 @@ class ScopedGLContext {
     }
   }
 
+  NSOpenGLContext* context() const { return context_; }
+
  private:
   NSOpenGLContext* context_;
   const bool swap_buffers_;
@@ -131,9 +132,6 @@ NSPoint ConvertPointFromWindowToScreen(NSWindow* window, NSPoint point) {
 
   return self;
 }
-
-// End disable NSOpenGL deprecation warnings.
-#pragma clang diagnostic pop
 
 - (void)dealloc {
   [[NSNotificationCenter defaultCenter]
@@ -1388,6 +1386,10 @@ class BrowserWindowOsrMacImpl {
                const void* buffer,
                int width,
                int height);
+  void OnAcceleratedPaint(CefRefPtr<CefBrowser> browser,
+                          CefRenderHandler::PaintElementType type,
+                          const CefRenderHandler::RectList& dirtyRects,
+                          const CefAcceleratedPaintInfo& info);
   void OnCursorChange(CefRefPtr<CefBrowser> browser,
                       CefCursorHandle cursor,
                       cef_cursor_type_t type,
@@ -1453,6 +1455,14 @@ void BrowserWindowOsrMacImpl::CreateBrowser(
   window_info.SetAsWindowless(
       CAST_NSVIEW_TO_CEF_WINDOW_HANDLE(native_browser_view_));
 
+  window_info.shared_texture_enabled =
+      renderer_.settings().shared_texture_enabled;
+  window_info.external_begin_frame_enabled =
+      renderer_.settings().external_begin_frame_enabled;
+
+  // Windowless rendering requires Alloy style.
+  DCHECK_EQ(CEF_RUNTIME_STYLE_ALLOY, window_info.runtime_style);
+
   // Create the browser asynchronously.
   CefBrowserHost::CreateBrowser(window_info, browser_window_.client_handler_,
                                 browser_window_.client_handler_->startup_url(),
@@ -1466,6 +1476,15 @@ void BrowserWindowOsrMacImpl::GetPopupConfig(CefWindowHandle temp_handle,
   CEF_REQUIRE_UI_THREAD();
 
   windowInfo.SetAsWindowless(temp_handle);
+
+  // Windowless rendering requires Alloy style.
+  DCHECK_EQ(CEF_RUNTIME_STYLE_ALLOY, windowInfo.runtime_style);
+
+  windowInfo.shared_texture_enabled =
+      renderer_.settings().shared_texture_enabled;
+  windowInfo.external_begin_frame_enabled =
+      renderer_.settings().external_begin_frame_enabled;
+
   client = browser_window_.client_handler_;
 }
 
@@ -1730,6 +1749,46 @@ void BrowserWindowOsrMacImpl::OnPaint(
   renderer_.Render();
 }
 
+void BrowserWindowOsrMacImpl::OnAcceleratedPaint(
+    CefRefPtr<CefBrowser> browser,
+    CefRenderHandler::PaintElementType type,
+    const CefRenderHandler::RectList& dirtyRects,
+    const CefAcceleratedPaintInfo& info) {
+  CEF_REQUIRE_UI_THREAD();
+  REQUIRE_MAIN_THREAD();
+
+  if (!native_browser_view_) {
+    return;
+  }
+
+  ScopedGLContext scoped_gl_context(native_browser_view_, true);
+
+  IOSurfaceRef io_surface = (IOSurfaceRef)info.shared_texture_io_surface;
+
+  GLuint rectTexture;
+  glGenTextures(1, &rectTexture);
+  glEnable(GL_TEXTURE_RECTANGLE_ARB);
+  glBindTexture(GL_TEXTURE_RECTANGLE_ARB, rectTexture);
+
+  CGLContextObj cgl_context = CGLGetCurrentContext();
+
+  GLsizei width = (GLsizei)IOSurfaceGetWidth(io_surface);
+  GLsizei height = (GLsizei)IOSurfaceGetHeight(io_surface);
+
+  CGLTexImageIOSurface2D(cgl_context, GL_TEXTURE_RECTANGLE_ARB, GL_RGBA8, width,
+                         height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
+                         io_surface, 0);
+
+  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+  glBindTexture(GL_TEXTURE_RECTANGLE_ARB, 0);
+
+  renderer_.OnAcceleratedPaint(browser, type, dirtyRects, rectTexture, width,
+                               height);
+  renderer_.Render();
+}
+
 void BrowserWindowOsrMacImpl::OnCursorChange(
     CefRefPtr<CefBrowser> browser,
     CefCursorHandle cursor,
@@ -1956,6 +2015,14 @@ void BrowserWindowOsrMac::OnPaint(CefRefPtr<CefBrowser> browser,
   impl_->OnPaint(browser, type, dirtyRects, buffer, width, height);
 }
 
+void BrowserWindowOsrMac::OnAcceleratedPaint(
+    CefRefPtr<CefBrowser> browser,
+    CefRenderHandler::PaintElementType type,
+    const CefRenderHandler::RectList& dirtyRects,
+    const CefAcceleratedPaintInfo& info) {
+  impl_->OnAcceleratedPaint(browser, type, dirtyRects, info);
+}
+
 void BrowserWindowOsrMac::OnCursorChange(
     CefRefPtr<CefBrowser> browser,
     CefCursorHandle cursor,
@@ -1997,3 +2064,6 @@ void BrowserWindowOsrMac::UpdateAccessibilityLocation(
 }
 
 }  // namespace client
+
+// End disable NSOpenGL deprecation warnings.
+#pragma clang diagnostic pop

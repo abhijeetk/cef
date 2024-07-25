@@ -6,20 +6,22 @@
 #define CEF_LIBCEF_BROWSER_VIEWS_BROWSER_VIEW_IMPL_H_
 #pragma once
 
-#include "include/cef_client.h"
-#include "include/views/cef_browser_view.h"
-#include "include/views/cef_browser_view_delegate.h"
-#include "libcef/browser/browser_host_base.h"
-#include "libcef/browser/views/browser_view_view.h"
-#include "libcef/browser/views/view_impl.h"
-
 #include "base/functional/callback_forward.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "cef/include/cef_client.h"
+#include "cef/include/views/cef_browser_view.h"
+#include "cef/include/views/cef_browser_view_delegate.h"
+#include "cef/libcef/browser/browser_host_base.h"
+#include "cef/libcef/browser/views/browser_view_view.h"
+#include "cef/libcef/browser/views/view_impl.h"
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 
 class CefBrowserHostBase;
+class CefWidget;
 class CefWindowImpl;
 class ChromeBrowserView;
+class Profile;
 
 class CefBrowserViewImpl
     : public CefViewImpl<views::View, CefBrowserView, CefBrowserViewDelegate>,
@@ -46,22 +48,25 @@ class CefBrowserViewImpl
   // nullptr.
   static CefRefPtr<CefBrowserViewImpl> CreateForPopup(
       const CefBrowserSettings& settings,
-      CefRefPtr<CefBrowserViewDelegate> delegate);
+      CefRefPtr<CefBrowserViewDelegate> delegate,
+      bool is_devtools);
 
-  // Called from CefBrowserPlatformDelegateViews.
+  // Called from CefBrowserPlatformDelegate[Chrome]Views.
   void WebContentsCreated(content::WebContents* web_contents);
+  void WebContentsDestroyed(content::WebContents* web_contents);
   void BrowserCreated(CefBrowserHostBase* browser,
                       base::RepeatingClosure on_bounds_changed);
   void BrowserDestroyed(CefBrowserHostBase* browser);
 
   // Called to handle accelerators when the event is unhandled by the web
   // content and the browser client.
-  bool HandleKeyboardEvent(const content::NativeWebKeyboardEvent& event);
+  bool HandleKeyboardEvent(const input::NativeWebKeyboardEvent& event);
 
   // CefBrowserView methods:
   CefRefPtr<CefBrowser> GetBrowser() override;
   CefRefPtr<CefView> GetChromeToolbar() override;
   void SetPreferAccelerators(bool prefer_accelerators) override;
+  cef_runtime_style_t GetRuntimeStyle() override;
 
   // CefView methods:
   CefRefPtr<CefBrowserView> AsBrowserView() override { return this; }
@@ -74,7 +79,8 @@ class CefBrowserViewImpl
   void GetDebugInfo(base::Value::Dict* info, bool include_children) override;
 
   // CefBrowserViewView::Delegate methods:
-  void OnBrowserViewAdded() override;
+  void AddedToWidget() override;
+  void RemovedFromWidget() override;
   void OnBoundsChanged() override;
   bool OnGestureEvent(ui::GestureEvent* event) override;
 
@@ -87,11 +93,15 @@ class CefBrowserViewImpl
   // Return the CefWindowImpl hosting this object.
   CefWindowImpl* cef_window_impl() const;
 
+  bool IsAlloyStyle() const { return is_alloy_style_; }
+  bool IsChromeStyle() const { return !is_alloy_style_; }
+
  private:
   // Create a new implementation object.
   // Always call Initialize() after creation.
   // |delegate| may be nullptr.
-  explicit CefBrowserViewImpl(CefRefPtr<CefBrowserViewDelegate> delegate);
+  CefBrowserViewImpl(CefRefPtr<CefBrowserViewDelegate> delegate,
+                     bool is_devtools_popup);
 
   void SetPendingBrowserCreateParams(
       const CefWindowInfo& window_info,
@@ -110,10 +120,15 @@ class CefBrowserViewImpl
   // Logic extracted from UnhandledKeyboardEventHandler::HandleKeyboardEvent for
   // the handling of accelerators. Returns true if the event was handled by the
   // accelerator.
-  bool HandleAccelerator(const content::NativeWebKeyboardEvent& event,
+  bool HandleAccelerator(const input::NativeWebKeyboardEvent& event,
                          views::FocusManager* focus_manager);
 
   void RequestFocusInternal();
+
+  void DisassociateFromWidget();
+
+  // True if the browser is Alloy style, otherwise Chrome style.
+  const bool is_alloy_style_;
 
   std::unique_ptr<CefBrowserCreateParams> pending_browser_create_params_;
 
@@ -123,6 +138,9 @@ class CefBrowserViewImpl
   bool ignore_next_char_event_ = false;
 
   base::RepeatingClosure on_bounds_changed_;
+
+  raw_ptr<CefWidget> cef_widget_ = nullptr;
+  raw_ptr<Profile> profile_ = nullptr;
 
   base::WeakPtrFactory<CefBrowserViewImpl> weak_ptr_factory_;
 

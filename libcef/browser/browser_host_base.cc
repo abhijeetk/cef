@@ -2,21 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "libcef/browser/browser_host_base.h"
+#include "cef/libcef/browser/browser_host_base.h"
 
 #include <tuple>
 
-#include "libcef/browser/browser_info_manager.h"
-#include "libcef/browser/browser_platform_delegate.h"
-#include "libcef/browser/context.h"
-#include "libcef/browser/image_impl.h"
-#include "libcef/browser/navigation_entry_impl.h"
-#include "libcef/browser/printing/print_util.h"
-#include "libcef/browser/thread_util.h"
-#include "libcef/common/frame_util.h"
-#include "libcef/common/net/url_util.h"
-
 #include "base/logging.h"
+#include "cef/libcef/browser/browser_guest_util.h"
+#include "cef/libcef/browser/browser_info_manager.h"
+#include "cef/libcef/browser/browser_platform_delegate.h"
+#include "cef/libcef/browser/context.h"
+#include "cef/libcef/browser/hang_monitor.h"
+#include "cef/libcef/browser/image_impl.h"
+#include "cef/libcef/browser/navigation_entry_impl.h"
+#include "cef/libcef/browser/printing/print_util.h"
+#include "cef/libcef/browser/thread_util.h"
+#include "cef/libcef/common/frame_util.h"
+#include "cef/libcef/common/net/url_util.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
@@ -31,6 +32,8 @@
 #include "content/public/browser/download_request_utils.h"
 #include "content/public/browser/file_select_listener.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host.h"
 #include "ui/base/resource/resource_scale_factor.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/shell_dialogs/select_file_policy.h"
@@ -81,6 +84,12 @@ class WebContentsUserDataAdapter : public base::SupportsUserData::Data {
 }  // namespace
 
 // static
+CefRefPtr<CefBrowserHostBase> CefBrowserHostBase::FromBrowser(
+    CefRefPtr<CefBrowser> browser) {
+  return static_cast<CefBrowserHostBase*>(browser.get());
+}
+
+// static
 CefRefPtr<CefBrowserHostBase> CefBrowserHostBase::GetBrowserForHost(
     const content::RenderViewHost* host) {
   DCHECK(host);
@@ -112,7 +121,18 @@ CefRefPtr<CefBrowserHostBase> CefBrowserHostBase::GetBrowserForContents(
     const content::WebContents* contents) {
   DCHECK(contents);
   CEF_REQUIRE_UIT();
-  return WebContentsUserDataAdapter::Get(contents);
+  if (auto browser = WebContentsUserDataAdapter::Get(contents)) {
+    return browser;
+  }
+
+  // Try the owner WebContents if |contents| originates from an excluded view
+  // such as the PDF viewer or Print Preview. This is safe to call even if Alloy
+  // extensions are disabled.
+  if (auto* owner_contents = GetOwnerForGuestContents(contents)) {
+    return WebContentsUserDataAdapter::Get(owner_contents);
+  }
+
+  return nullptr;
 }
 
 // static
@@ -132,10 +152,8 @@ CefRefPtr<CefBrowserHostBase> CefBrowserHostBase::GetBrowserForGlobalId(
     return GetBrowserForHost(render_frame_host);
   } else {
     // Use the thread-safe approach.
-    bool is_guest_view = false;
-    auto info = CefBrowserInfoManager::GetInstance()->GetBrowserInfo(
-        global_id, &is_guest_view);
-    if (info && !is_guest_view) {
+    auto info = CefBrowserInfoManager::GetInstance()->GetBrowserInfo(global_id);
+    if (info) {
       auto browser = info->browser();
       if (!browser) {
         LOG(WARNING) << "Found browser id " << info->browser_id()
@@ -165,10 +183,9 @@ CefRefPtr<CefBrowserHostBase> CefBrowserHostBase::GetBrowserForGlobalToken(
     return GetBrowserForHost(render_frame_host);
   } else {
     // Use the thread-safe approach.
-    bool is_guest_view = false;
-    auto info = CefBrowserInfoManager::GetInstance()->GetBrowserInfo(
-        global_token, &is_guest_view);
-    if (info && !is_guest_view) {
+    auto info =
+        CefBrowserInfoManager::GetInstance()->GetBrowserInfo(global_token);
+    if (info) {
       auto browser = info->browser();
       if (!browser) {
         LOG(WARNING) << "Found browser id " << info->browser_id()
@@ -192,6 +209,23 @@ CefBrowserHostBase::GetBrowserForTopLevelNativeWindow(
        CefBrowserInfoManager::GetInstance()->GetBrowserInfoList()) {
     if (auto browser = browser_info->browser()) {
       if (browser->GetTopLevelNativeWindow() == owning_window) {
+        return browser;
+      }
+    }
+  }
+
+  return nullptr;
+}
+
+// static
+CefRefPtr<CefBrowserHostBase> CefBrowserHostBase::GetBrowserForBrowserId(
+    int browser_id) {
+  DCHECK_GT(browser_id, 0);
+
+  for (const auto& browser_info :
+       CefBrowserInfoManager::GetInstance()->GetBrowserInfoList()) {
+    if (auto browser = browser_info->browser()) {
+      if (browser->GetIdentifier() == browser_id) {
         return browser;
       }
     }
@@ -227,14 +261,13 @@ CefBrowserHostBase::CefBrowserHostBase(
       platform_delegate_(std::move(platform_delegate)),
       browser_info_(browser_info),
       request_context_(request_context),
-      is_views_hosted_(platform_delegate_->IsViewsHosted()) {
+      is_views_hosted_(platform_delegate_->IsViewsHosted()),
+      contents_delegate_(browser_info_) {
   CEF_REQUIRE_UIT();
   DCHECK(!browser_info_->browser().get());
   browser_info_->SetBrowser(this);
 
-  contents_delegate_ =
-      std::make_unique<CefBrowserContentsDelegate>(browser_info_);
-  contents_delegate_->AddObserver(this);
+  contents_delegate_.AddObserver(this);
 }
 
 void CefBrowserHostBase::InitializeBrowser() {
@@ -245,19 +278,59 @@ void CefBrowserHostBase::InitializeBrowser() {
   WebContentsUserDataAdapter::Register(this);
 }
 
+void CefBrowserHostBase::DestroyWebContents(
+    content::WebContents* web_contents) {
+  CEF_REQUIRE_UIT();
+
+  // GetWebContents() should return nullptr at this point.
+  DCHECK(!GetWebContents());
+
+  // Notify that this browser has been destroyed. These must be delivered in
+  // the expected order.
+
+  // 1. Notify the platform delegate. With Views this will result in a call to
+  // CefBrowserViewDelegate::OnBrowserDestroyed().
+  platform_delegate_->NotifyBrowserDestroyed();
+
+  // 2. Notify the browser's LifeSpanHandler. This must always be the last
+  // notification for this browser.
+  OnBeforeClose();
+
+  // Notify any observers that may have state associated with this browser.
+  OnBrowserDestroyed();
+
+  // Free objects that may have references to the WebContents.
+  devtools_protocol_manager_.reset();
+  devtools_window_runner_.reset();
+  context_menu_observer_ = nullptr;
+  if (javascript_dialog_manager_) {
+    javascript_dialog_manager_->Destroy();
+    javascript_dialog_manager_.reset();
+  }
+
+  browser_info_->WebContentsDestroyed();
+  platform_delegate_->WebContentsDestroyed(web_contents);
+}
+
 void CefBrowserHostBase::DestroyBrowser() {
   CEF_REQUIRE_UIT();
 
-  devtools_manager_.reset();
+  // The WebContents should no longer be observed.
+  DCHECK(!contents_delegate_.web_contents());
+
   media_stream_registrar_.reset();
 
   platform_delegate_.reset();
 
-  contents_delegate_->RemoveObserver(this);
-  contents_delegate_->ObserveWebContents(nullptr);
+  contents_delegate_.RemoveObserver(this);
+
+  if (unresponsive_process_callback_) {
+    hang_monitor::Detach(unresponsive_process_callback_);
+    unresponsive_process_callback_.reset();
+  }
 
   CefBrowserInfoManager::GetInstance()->RemoveBrowserInfo(browser_info_);
-  browser_info_->SetBrowser(nullptr);
+  browser_info_->BrowserDestroyed();
 }
 
 CefRefPtr<CefBrowser> CefBrowserHostBase::GetBrowser() {
@@ -554,6 +627,30 @@ void CefBrowserHostBase::ShowDevTools(const CefWindowInfo& windowInfo,
   }
 }
 
+void CefBrowserHostBase::CloseDevTools() {
+  if (!CEF_CURRENTLY_ON_UIT()) {
+    CEF_POST_TASK(CEF_UIT,
+                  base::BindOnce(&CefBrowserHostBase::CloseDevTools, this));
+    return;
+  }
+
+  if (devtools_window_runner_) {
+    devtools_window_runner_->CloseDevTools();
+  }
+}
+
+bool CefBrowserHostBase::HasDevTools() {
+  if (!CEF_CURRENTLY_ON_UIT()) {
+    DCHECK(false) << "called on invalid thread";
+    return false;
+  }
+
+  if (devtools_window_runner_) {
+    return devtools_window_runner_->HasDevTools();
+  }
+  return false;
+}
+
 bool CefBrowserHostBase::SendDevToolsMessage(const void* message,
                                              size_t message_size) {
   if (!message || message_size == 0) {
@@ -572,10 +669,10 @@ bool CefBrowserHostBase::SendDevToolsMessage(const void* message,
     return false;
   }
 
-  if (!EnsureDevToolsManager()) {
+  if (!EnsureDevToolsProtocolManager()) {
     return false;
   }
-  return devtools_manager_->SendDevToolsMessage(message, message_size);
+  return devtools_protocol_manager_->SendDevToolsMessage(message, message_size);
 }
 
 int CefBrowserHostBase::ExecuteDevToolsMethod(
@@ -590,10 +687,11 @@ int CefBrowserHostBase::ExecuteDevToolsMethod(
     return 0;
   }
 
-  if (!EnsureDevToolsManager()) {
+  if (!EnsureDevToolsProtocolManager()) {
     return 0;
   }
-  return devtools_manager_->ExecuteDevToolsMethod(message_id, method, params);
+  return devtools_protocol_manager_->ExecuteDevToolsMethod(message_id, method,
+                                                           params);
 }
 
 CefRefPtr<CefRegistration> CefBrowserHostBase::AddDevToolsMessageObserver(
@@ -601,7 +699,7 @@ CefRefPtr<CefRegistration> CefBrowserHostBase::AddDevToolsMessageObserver(
   if (!observer) {
     return nullptr;
   }
-  auto registration = CefDevToolsManager::CreateRegistration(observer);
+  auto registration = CefDevToolsProtocolManager::CreateRegistration(observer);
   InitializeDevToolsRegistrationOnUIThread(registration);
   return registration.get();
 }
@@ -705,6 +803,26 @@ void CefBrowserHostBase::ExitFullscreen(bool will_cause_resize) {
   if (web_contents && web_contents->IsFullscreen()) {
     web_contents->ExitFullscreen(will_cause_resize);
   }
+}
+
+bool CefBrowserHostBase::IsRenderProcessUnresponsive() {
+  if (!CEF_CURRENTLY_ON_UIT()) {
+    DCHECK(false) << "called on invalid thread";
+    return false;
+  }
+
+  if (auto* web_contents = GetWebContents()) {
+    if (auto* rvh = web_contents->GetRenderViewHost()) {
+      if (auto* rwh = rvh->GetWidget()) {
+        return rwh->IsCurrentlyUnresponsive();
+      }
+    }
+  }
+  return false;
+}
+
+cef_runtime_style_t CefBrowserHostBase::GetRuntimeStyle() {
+  return IsAlloyStyle() ? CEF_RUNTIME_STYLE_ALLOY : CEF_RUNTIME_STYLE_CHROME;
 }
 
 void CefBrowserHostBase::ReplaceMisspelling(const CefString& word) {
@@ -812,7 +930,7 @@ void CefBrowserHostBase::SendMouseWheelEvent(const CefMouseEvent& event,
 }
 
 bool CefBrowserHostBase::IsValid() {
-  return browser_info_->browser() == this;
+  return browser_info_->IsValid();
 }
 
 CefRefPtr<CefBrowserHost> CefBrowserHostBase::GetHost() {
@@ -924,8 +1042,8 @@ int CefBrowserHostBase::GetIdentifier() {
 }
 
 bool CefBrowserHostBase::IsSame(CefRefPtr<CefBrowser> that) {
-  auto impl = static_cast<CefBrowserHostBase*>(that.get());
-  return (impl == this);
+  auto impl = FromBrowser(that);
+  return (impl.get() == this);
 }
 
 bool CefBrowserHostBase::HasDocument() {
@@ -1029,21 +1147,21 @@ void CefBrowserHostBase::OnStateChanged(CefBrowserContentsState state_changed) {
   base::AutoLock lock_scope(state_lock_);
   if ((state_changed & CefBrowserContentsState::kNavigation) ==
       CefBrowserContentsState::kNavigation) {
-    is_loading_ = contents_delegate_->is_loading();
-    can_go_back_ = contents_delegate_->can_go_back();
-    can_go_forward_ = contents_delegate_->can_go_forward();
+    is_loading_ = contents_delegate_.is_loading();
+    can_go_back_ = contents_delegate_.can_go_back();
+    can_go_forward_ = contents_delegate_.can_go_forward();
   }
   if ((state_changed & CefBrowserContentsState::kDocument) ==
       CefBrowserContentsState::kDocument) {
-    has_document_ = contents_delegate_->has_document();
+    has_document_ = contents_delegate_.has_document();
   }
   if ((state_changed & CefBrowserContentsState::kFullscreen) ==
       CefBrowserContentsState::kFullscreen) {
-    is_fullscreen_ = contents_delegate_->is_fullscreen();
+    is_fullscreen_ = contents_delegate_.is_fullscreen();
   }
   if ((state_changed & CefBrowserContentsState::kFocusedFrame) ==
       CefBrowserContentsState::kFocusedFrame) {
-    focused_frame_ = contents_delegate_->focused_frame();
+    focused_frame_ = contents_delegate_.focused_frame();
   }
 }
 
@@ -1062,12 +1180,12 @@ CefRefPtr<CefFrame> CefBrowserHostBase::GetFrameForHost(
 
 CefRefPtr<CefFrame> CefBrowserHostBase::GetFrameForGlobalId(
     const content::GlobalRenderFrameHostId& global_id) {
-  return browser_info_->GetFrameForGlobalId(global_id, nullptr);
+  return browser_info_->GetFrameForGlobalId(global_id);
 }
 
 CefRefPtr<CefFrame> CefBrowserHostBase::GetFrameForGlobalToken(
     const content::GlobalRenderFrameHostToken& global_token) {
-  return browser_info_->GetFrameForGlobalToken(global_token, nullptr);
+  return browser_info_->GetFrameForGlobalToken(global_token);
 }
 
 void CefBrowserHostBase::AddObserver(Observer* observer) {
@@ -1117,6 +1235,12 @@ bool CefBrowserHostBase::Navigate(const content::OpenURLParams& params) {
     return true;
   }
   return false;
+}
+
+void CefBrowserHostBase::ShowDevToolsOnUIThread(
+    std::unique_ptr<CefShowDevToolsParams> params) {
+  CEF_REQUIRE_UIT();
+  GetDevToolsWindowRunner()->ShowDevTools(this, std::move(params));
 }
 
 void CefBrowserHostBase::ViewText(const std::string& text) {
@@ -1170,9 +1294,17 @@ void CefBrowserHostBase::SelectFileListenerDestroyed(
   }
 }
 
+content::JavaScriptDialogManager*
+CefBrowserHostBase::GetJavaScriptDialogManager() {
+  if (!javascript_dialog_manager_) {
+    javascript_dialog_manager_ =
+        std::make_unique<CefJavaScriptDialogManager>(this);
+  }
+  return javascript_dialog_manager_.get();
+}
+
 bool CefBrowserHostBase::MaybeAllowNavigation(
     content::RenderFrameHost* opener,
-    bool is_guest_view,
     const content::OpenURLParams& params) {
   return true;
 }
@@ -1220,13 +1352,9 @@ SkColor CefBrowserHostBase::GetBackgroundColor() const {
       &settings_, IsWindowless() ? STATE_ENABLED : STATE_DISABLED);
 }
 
-bool CefBrowserHostBase::IsWindowless() const {
-  return false;
-}
-
 content::WebContents* CefBrowserHostBase::GetWebContents() const {
   CEF_REQUIRE_UIT();
-  return contents_delegate_->web_contents();
+  return contents_delegate_.web_contents();
 }
 
 content::BrowserContext* CefBrowserHostBase::GetBrowserContext() const {
@@ -1244,6 +1372,13 @@ CefMediaStreamRegistrar* CefBrowserHostBase::GetMediaStreamRegistrar() {
     media_stream_registrar_ = std::make_unique<CefMediaStreamRegistrar>(this);
   }
   return media_stream_registrar_.get();
+}
+
+CefDevToolsWindowRunner* CefBrowserHostBase::GetDevToolsWindowRunner() {
+  if (!devtools_window_runner_) {
+    devtools_window_runner_ = std::make_unique<CefDevToolsWindowRunner>();
+  }
+  return devtools_window_runner_.get();
 }
 
 views::Widget* CefBrowserHostBase::GetWindowWidget() const {
@@ -1297,14 +1432,15 @@ bool CefBrowserHostBase::IsVisible() const {
   return false;
 }
 
-bool CefBrowserHostBase::EnsureDevToolsManager() {
+bool CefBrowserHostBase::EnsureDevToolsProtocolManager() {
   CEF_REQUIRE_UIT();
-  if (!contents_delegate_->web_contents()) {
+  if (!contents_delegate_.web_contents()) {
     return false;
   }
 
-  if (!devtools_manager_) {
-    devtools_manager_ = std::make_unique<CefDevToolsManager>(this);
+  if (!devtools_protocol_manager_) {
+    devtools_protocol_manager_ =
+        std::make_unique<CefDevToolsProtocolManager>(this);
   }
   return true;
 }
@@ -1320,15 +1456,15 @@ void CefBrowserHostBase::InitializeDevToolsRegistrationOnUIThread(
     return;
   }
 
-  if (!EnsureDevToolsManager()) {
+  if (!EnsureDevToolsProtocolManager()) {
     return;
   }
-  devtools_manager_->InitializeRegistrationOnUIThread(registration);
+  devtools_protocol_manager_->InitializeRegistrationOnUIThread(registration);
 }
 
 bool CefBrowserHostBase::EnsureFileDialogManager() {
   CEF_REQUIRE_UIT();
-  if (!contents_delegate_->web_contents()) {
+  if (!contents_delegate_.web_contents()) {
     return false;
   }
 

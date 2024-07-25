@@ -3,24 +3,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "libcef/browser/osr/render_widget_host_view_osr.h"
+#include "cef/libcef/browser/osr/render_widget_host_view_osr.h"
 
 #include <stdint.h>
+
 #include <memory>
 #include <utility>
-
-#include "libcef/browser/alloy/alloy_browser_host_impl.h"
-#include "libcef/browser/osr/osr_util.h"
-#include "libcef/browser/osr/synthetic_gesture_target_osr.h"
-#include "libcef/browser/osr/touch_selection_controller_client_osr.h"
-#include "libcef/browser/osr/video_consumer_osr.h"
-#include "libcef/browser/thread_util.h"
 
 #include "base/command_line.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
+#include "base/memory/raw_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "cc/base/switches.h"
+#include "cef/libcef/browser/alloy/alloy_browser_host_impl.h"
+#include "cef/libcef/browser/osr/osr_util.h"
+#include "cef/libcef/browser/osr/synthetic_gesture_target_osr.h"
+#include "cef/libcef/browser/osr/touch_selection_controller_client_osr.h"
+#include "cef/libcef/browser/osr/video_consumer_osr.h"
+#include "cef/libcef/browser/thread_util.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
@@ -29,15 +30,15 @@
 #include "components/viz/common/switches.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
-#include "content/browser/renderer_host/cursor_manager.h"
 #include "content/browser/renderer_host/delegated_frame_host.h"
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/input/motion_event_web.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_target_base.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
-#include "content/browser/renderer_host/render_widget_host_input_event_router.h"
 #include "content/common/content_switches_internal.h"
+#include "content/common/input/cursor_manager.h"
+#include "content/common/input/render_widget_host_input_event_router.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/context_factory.h"
@@ -115,8 +116,11 @@ class CefDelegatedFrameHostClient : public content::DelegatedFrameHostClient {
     return view_->GetDeviceScaleFactor();
   }
 
-  std::vector<viz::SurfaceId> CollectSurfaceIdsForEviction() override {
-    return view_->render_widget_host()->CollectSurfaceIdsForEviction();
+  viz::FrameEvictorClient::EvictIds CollectSurfaceIdsForEviction() override {
+    viz::FrameEvictorClient::EvictIds ids;
+    ids.embedded_ids =
+        view_->render_widget_host()->CollectSurfaceIdsForEviction();
+    return ids;
   }
 
   void InvalidateLocalSurfaceIdOnEviction() override {
@@ -126,7 +130,7 @@ class CefDelegatedFrameHostClient : public content::DelegatedFrameHostClient {
   bool ShouldShowStaleContentOnEviction() override { return false; }
 
  private:
-  CefRenderWidgetHostViewOSR* const view_;
+  const raw_ptr<CefRenderWidgetHostViewOSR> view_;
 };
 
 ui::GestureProvider::Config CreateGestureProviderConfig() {
@@ -202,6 +206,7 @@ CefRenderWidgetHostViewOSR::CefRenderWidgetHostViewOSR(
     CefRenderWidgetHostViewOSR* parent_host_view)
     : content::RenderWidgetHostViewBase(widget),
       background_color_(background_color),
+      use_shared_texture_(use_shared_texture),
       render_widget_host_(content::RenderWidgetHostImpl::From(widget)),
       has_parent_(parent_host_view != nullptr),
       parent_host_view_(parent_host_view),
@@ -305,8 +310,16 @@ void CefRenderWidgetHostViewOSR::ReleaseCompositor() {
         content::DelegatedFrameHost::HiddenCause::kOther);
   }
   delegated_frame_host_->DetachFromCompositor();
-
   delegated_frame_host_.reset(nullptr);
+
+  content::RenderWidgetHostImpl* render_widget_host_impl =
+      content::RenderWidgetHostImpl::From(render_widget_host_);
+  if (render_widget_host_impl) {
+    render_widget_host_impl->SetCompositorForFlingScheduler(nullptr);
+  }
+
+  host_display_client_ = nullptr;
+
   compositor_.reset(nullptr);
 }
 
@@ -334,11 +347,14 @@ void CefRenderWidgetHostViewOSR::SetSize(const gfx::Size& size) {}
 void CefRenderWidgetHostViewOSR::SetBounds(const gfx::Rect& rect) {}
 
 gfx::NativeView CefRenderWidgetHostViewOSR::GetNativeView() {
+  // TODO(osr): Fix all calling code paths and convert to DCHECK.
+  NOTIMPLEMENTED();
   return gfx::NativeView();
 }
 
 gfx::NativeViewAccessible
 CefRenderWidgetHostViewOSR::GetNativeViewAccessible() {
+  NOTIMPLEMENTED();
   return gfx::NativeViewAccessible();
 }
 
@@ -397,7 +413,8 @@ void CefRenderWidgetHostViewOSR::ShowWithVisibility(
   if (!content::GpuDataManagerImpl::GetInstance()->IsGpuCompositingDisabled()) {
     // Start generating frames when we're visible and at the correct size.
     if (!video_consumer_) {
-      video_consumer_ = std::make_unique<CefVideoConsumerOSR>(this);
+      video_consumer_ =
+          std::make_unique<CefVideoConsumerOSR>(this, use_shared_texture_);
       UpdateFrameRate();
     } else {
       video_consumer_->SetActive(true);
@@ -944,7 +961,7 @@ CefRenderWidgetHostViewOSR::CreateSyntheticGestureTarget() {
 
 bool CefRenderWidgetHostViewOSR::TransformPointToCoordSpaceForView(
     const gfx::PointF& point,
-    RenderWidgetHostViewBase* target_view,
+    RenderWidgetHostViewInput* target_view,
     gfx::PointF* transformed_point) {
   if (target_view == this) {
     *transformed_point = point;
@@ -1029,7 +1046,7 @@ CefRenderWidgetHostViewOSR::CreateHostDisplayClient() {
   host_display_client_ =
       new CefHostDisplayClientOSR(this, gfx::kNullAcceleratedWidget);
   host_display_client_->SetActive(true);
-  return base::WrapUnique(host_display_client_);
+  return base::WrapUnique(host_display_client_.get());
 }
 
 bool CefRenderWidgetHostViewOSR::InstallTransparency() {
@@ -1169,7 +1186,7 @@ void CefRenderWidgetHostViewOSR::SendExternalBeginFrame() {
 }
 
 void CefRenderWidgetHostViewOSR::SendKeyEvent(
-    const content::NativeWebKeyboardEvent& event) {
+    const input::NativeWebKeyboardEvent& event) {
   TRACE_EVENT0("cef", "CefRenderWidgetHostViewOSR::SendKeyEvent");
   content::RenderWidgetHostImpl* target_host = render_widget_host_;
 
@@ -1398,8 +1415,8 @@ void CefRenderWidgetHostViewOSR::SendTouchEvent(const CefTouchEvent& event) {
     render_widget_host_->delegate()->GetInputEventRouter()->RouteTouchEvent(
         this, &touch_event, latency_info);
   } else {
-    render_widget_host_->ForwardTouchEventWithLatencyInfo(touch_event,
-                                                          latency_info);
+    render_widget_host_->GetRenderInputRouter()
+        ->ForwardTouchEventWithLatencyInfo(touch_event, latency_info);
   }
 
   bool touch_end =
@@ -1478,7 +1495,7 @@ void CefRenderWidgetHostViewOSR::OnUpdateTextInputStateCalled(
 }
 
 void CefRenderWidgetHostViewOSR::ProcessAckedTouchEvent(
-    const content::TouchEventWithLatencyInfo& touch,
+    const input::TouchEventWithLatencyInfo& touch,
     blink::mojom::InputEventResultState ack_result) {
   const bool event_consumed =
       ack_result == blink::mojom::InputEventResultState::kConsumed;
@@ -1551,6 +1568,8 @@ void CefRenderWidgetHostViewOSR::ShowSharePicker(
 }
 
 uint64_t CefRenderWidgetHostViewOSR::GetNSViewId() const {
+  // TODO(osr): Fix all calling code paths and convert to DCHECK.
+  NOTIMPLEMENTED();
   return 0;
 }
 #endif  // BUILDFLAG(IS_MAC)
@@ -1560,7 +1579,7 @@ void CefRenderWidgetHostViewOSR::OnPaint(const gfx::Rect& damage_rect,
                                          const void* pixels) {
   TRACE_EVENT0("cef", "CefRenderWidgetHostViewOSR::OnPaint");
 
-  // Workaround for https://github.com/chromiumembedded/cef/issues/2817
+  // Workaround for issue #2817.
   if (!is_showing_) {
     return;
   }
@@ -1582,6 +1601,43 @@ void CefRenderWidgetHostViewOSR::OnPaint(const gfx::Rect& damage_rect,
 
   handler->OnPaint(browser_impl_.get(), IsPopupWidget() ? PET_POPUP : PET_VIEW,
                    rcList, pixels, pixel_size.width(), pixel_size.height());
+
+  // Release the resize hold when we reach the desired size.
+  if (hold_resize_) {
+    DCHECK_GT(cached_scale_factor_, 0);
+    gfx::Size expected_size =
+        gfx::ScaleToCeiledSize(GetViewBounds().size(), cached_scale_factor_);
+    if (pixel_size == expected_size) {
+      ReleaseResizeHold();
+    }
+  }
+}
+
+void CefRenderWidgetHostViewOSR::OnAcceleratedPaint(
+    const gfx::Rect& damage_rect,
+    const gfx::Size& pixel_size,
+    const CefAcceleratedPaintInfo& info) {
+  TRACE_EVENT0("cef", "CefRenderWidgetHostViewOSR::OnAcceleratedPaint");
+
+  // Workaround for https://github.com/chromiumembedded/cef/issues/2817
+  if (!is_showing_) {
+    return;
+  }
+
+  CefRefPtr<CefRenderHandler> handler =
+      browser_impl_->client()->GetRenderHandler();
+  CHECK(handler);
+
+  gfx::Rect rect_in_pixels(0, 0, pixel_size.width(), pixel_size.height());
+  rect_in_pixels.Intersect(damage_rect);
+
+  CefRenderHandler::RectList rcList;
+  rcList.emplace_back(rect_in_pixels.x(), rect_in_pixels.y(),
+                      rect_in_pixels.width(), rect_in_pixels.height());
+
+  handler->OnAcceleratedPaint(browser_impl_.get(),
+                              IsPopupWidget() ? PET_POPUP : PET_VIEW, rcList,
+                              info);
 
   // Release the resize hold when we reach the desired size.
   if (hold_resize_) {

@@ -11,28 +11,25 @@
 #include <string>
 #include <vector>
 
-#include "include/cef_browser.h"
-#include "include/cef_client.h"
-#include "include/cef_frame.h"
-#include "libcef/browser/browser_host_base.h"
-#include "libcef/browser/browser_info.h"
-#include "libcef/browser/frame_host_impl.h"
-#include "libcef/browser/javascript_dialog_manager.h"
-#include "libcef/browser/menu_manager.h"
-#include "libcef/browser/request_context_impl.h"
-
 #include "base/synchronization/lock.h"
+#include "cef/include/cef_browser.h"
+#include "cef/include/cef_client.h"
+#include "cef/include/cef_frame.h"
+#include "cef/libcef/browser/browser_host_base.h"
+#include "cef/libcef/browser/browser_info.h"
+#include "cef/libcef/browser/frame_host_impl.h"
+#include "cef/libcef/browser/menu_manager.h"
+#include "cef/libcef/browser/request_context_impl.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "extensions/common/mojom/view_type.mojom-forward.h"
 
 class CefAudioCapturer;
 class CefBrowserInfo;
 class SiteInstance;
 
-// CefBrowser implementation for the alloy runtime. Method calls are delegated
-// to the CefPlatformDelegate or the WebContents as appropriate. All methods are
+// CefBrowser implementation for Alloy style. Method calls are delegated to the
+// CefPlatformDelegate or the WebContents as appropriate. All methods are
 // thread-safe unless otherwise indicated.
 //
 // WebContentsDelegate: Interface for handling WebContents delegations. There is
@@ -62,6 +59,11 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
   static CefRefPtr<AlloyBrowserHostImpl> Create(
       CefBrowserCreateParams& create_params);
 
+  // Safe (checked) conversion from CefBrowserHostBase to AlloyBrowserHostImpl.
+  // Use this method instead of static_cast.
+  static CefRefPtr<AlloyBrowserHostImpl> FromBaseChecked(
+      CefRefPtr<CefBrowserHostBase> host_base);
+
   // Returns the browser associated with the specified RenderViewHost.
   static CefRefPtr<AlloyBrowserHostImpl> GetBrowserForHost(
       const content::RenderViewHost* host);
@@ -85,8 +87,6 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
             bool matchCase,
             bool findNext) override;
   void StopFinding(bool clearSelection) override;
-  void CloseDevTools() override;
-  bool HasDevTools() override;
   bool IsWindowRenderingDisabled() override;
   void WasResized() override;
   void WasHidden(bool hidden) override;
@@ -120,15 +120,13 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
   void SetAutoResizeEnabled(bool enabled,
                             const CefSize& min_size,
                             const CefSize& max_size) override;
-  CefRefPtr<CefExtension> GetExtension() override;
-  bool IsBackgroundHost() override;
   bool CanExecuteChromeCommand(int command_id) override;
   void ExecuteChromeCommand(int command_id,
                             cef_window_open_disposition_t disposition) override;
 
-  // Returns true if windowless rendering is enabled.
+  // CefBrowserHostBase methods:
   bool IsWindowless() const override;
-
+  bool IsAlloyStyle() const override { return true; }
   bool IsVisible() const override;
 
   // Returns true if this browser supports picture-in-picture.
@@ -147,7 +145,6 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
   void CancelContextMenu();
 
   bool MaybeAllowNavigation(content::RenderFrameHost* opener,
-                            bool is_guest_view,
                             const content::OpenURLParams& params) override;
 
   // Convert from view DIP coordinates to screen coordinates. If
@@ -164,9 +161,6 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
   void UpdateDragOperation(ui::mojom::DragOperation operation,
                            bool document_is_handling_drag);
 
-  // Accessors that must be called on the UI thread.
-  extensions::ExtensionHost* GetExtensionHost() const;
-
   void OnSetFocus(cef_focus_source_t source) override;
 
   bool ShowContextMenu(const content::ContextMenuParams& params);
@@ -182,9 +176,9 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
   // content::WebContentsDelegate methods.
   content::WebContents* OpenURLFromTab(
       content::WebContents* source,
-      const content::OpenURLParams& params) override;
-  bool ShouldAllowRendererInitiatedCrossProcessNavigation(
-      bool is_main_frame_navigation) override;
+      const content::OpenURLParams& params,
+      base::OnceCallback<void(content::NavigationHandle&)>
+          navigation_handle_callback) override;
   void AddNewContents(content::WebContents* source,
                       std::unique_ptr<content::WebContents> new_contents,
                       const GURL& target_url,
@@ -211,12 +205,9 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
                    base::OnceCallback<void(bool)> callback) override;
   content::KeyboardEventProcessingResult PreHandleKeyboardEvent(
       content::WebContents* source,
-      const content::NativeWebKeyboardEvent& event) override;
-  bool HandleKeyboardEvent(
-      content::WebContents* source,
-      const content::NativeWebKeyboardEvent& event) override;
-  bool PreHandleGestureEvent(content::WebContents* source,
-                             const blink::WebGestureEvent& event) override;
+      const input::NativeWebKeyboardEvent& event) override;
+  bool HandleKeyboardEvent(content::WebContents* source,
+                           const input::NativeWebKeyboardEvent& event) override;
   bool CanDragEnter(content::WebContents* source,
                     const content::DropData& data,
                     blink::DragOperationsMask operations_allowed) override;
@@ -225,14 +216,21 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
       const GURL& target_url,
       int opener_render_process_id,
       int opener_render_frame_id,
-      content::WebContentsView** view,
-      content::RenderViewHostDelegateView** delegate_view) override;
+      raw_ptr<content::WebContentsView>* view,
+      raw_ptr<content::RenderViewHostDelegateView>* delegate_view) override;
   void WebContentsCreated(content::WebContents* source_contents,
                           int opener_render_process_id,
                           int opener_render_frame_id,
                           const std::string& frame_name,
                           const GURL& target_url,
                           content::WebContents* new_contents) override;
+  void RendererUnresponsive(
+      content::WebContents* source,
+      content::RenderWidgetHost* render_widget_host,
+      base::RepeatingClosure hang_monitor_restarter) override;
+  void RendererResponsive(
+      content::WebContents* source,
+      content::RenderWidgetHost* render_widget_host) override;
   content::JavaScriptDialogManager* GetJavaScriptDialogManager(
       content::WebContents* source) override;
   void RunFileChooser(content::RenderFrameHost* render_frame_host,
@@ -263,13 +261,15 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
   bool CheckMediaAccessPermission(content::RenderFrameHost* render_frame_host,
                                   const url::Origin& security_origin,
                                   blink::mojom::MediaStreamType type) override;
-  bool IsNeverComposited(content::WebContents* web_contents) override;
   content::PictureInPictureResult EnterPictureInPicture(
       content::WebContents* web_contents) override;
   void ExitPictureInPicture() override;
-  bool IsBackForwardCacheSupported() override;
+  bool IsBackForwardCacheSupported(content::WebContents& web_contents) override;
   content::PreloadingEligibility IsPrerender2Supported(
       content::WebContents& web_contents) override;
+  void DraggableRegionsChanged(
+      const std::vector<blink::mojom::DraggableRegionPtr>& regions,
+      content::WebContents* contents) override;
 
   // content::WebContentsObserver methods.
   using content::WebContentsObserver::BeforeUnloadFired;
@@ -277,15 +277,10 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
       content::NavigationHandle* navigation_handle) override;
   void OnAudioStateChanged(bool audible) override;
   void AccessibilityEventReceived(
-      const content::AXEventNotificationDetails& content_event_bundle) override;
+      const ui::AXUpdatesAndEvents& details) override;
   void AccessibilityLocationChangesReceived(
-      const std::vector<content::AXLocationChangeNotificationDetails>& locData)
-      override;
+      const std::vector<ui::AXLocationChanges>& details) override;
   void WebContentsDestroyed() override;
-
- protected:
-  void ShowDevToolsOnUIThread(
-      std::unique_ptr<CefShowDevToolsParams> params) override;
 
  private:
   friend class CefBrowserPlatformDelegateAlloy;
@@ -299,8 +294,7 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
       CefRefPtr<AlloyBrowserHostImpl> opener,
       bool is_devtools_popup,
       CefRefPtr<CefRequestContextImpl> request_context,
-      std::unique_ptr<CefBrowserPlatformDelegate> platform_delegate,
-      CefRefPtr<CefExtension> extension);
+      std::unique_ptr<CefBrowserPlatformDelegate> platform_delegate);
 
   AlloyBrowserHostImpl(
       const CefBrowserSettings& settings,
@@ -309,8 +303,7 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
       scoped_refptr<CefBrowserInfo> browser_info,
       CefRefPtr<AlloyBrowserHostImpl> opener,
       CefRefPtr<CefRequestContextImpl> request_context,
-      std::unique_ptr<CefBrowserPlatformDelegate> platform_delegate,
-      CefRefPtr<CefExtension> extension);
+      std::unique_ptr<CefBrowserPlatformDelegate> platform_delegate);
 
   // Give the platform delegate an opportunity to create the host window.
   bool CreateHostWindow();
@@ -321,8 +314,6 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
   CefWindowHandle opener_;
   const bool is_windowless_;
   CefWindowHandle host_window_handle_ = kNullWindowHandle;
-  CefRefPtr<CefExtension> extension_;
-  bool is_background_host_ = false;
 
   // Represents the current browser destruction state. Only accessed on the UI
   // thread.
@@ -331,9 +322,6 @@ class AlloyBrowserHostImpl : public CefBrowserHostBase,
   // True if the OS window hosting the browser has been destroyed. Only accessed
   // on the UI thread.
   bool window_destroyed_ = false;
-
-  // Used for creating and managing JavaScript dialogs.
-  std::unique_ptr<CefJavaScriptDialogManager> javascript_dialog_manager_;
 
   // Used for creating and managing context menus.
   std::unique_ptr<CefMenuManager> menu_manager_;

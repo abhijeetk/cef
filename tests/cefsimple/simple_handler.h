@@ -5,16 +5,16 @@
 #ifndef CEF_TESTS_CEFSIMPLE_SIMPLE_HANDLER_H_
 #define CEF_TESTS_CEFSIMPLE_SIMPLE_HANDLER_H_
 
-#include "include/cef_client.h"
-
 #include <list>
+
+#include "include/cef_client.h"
 
 class SimpleHandler : public CefClient,
                       public CefDisplayHandler,
                       public CefLifeSpanHandler,
                       public CefLoadHandler {
  public:
-  SimpleHandler();
+  explicit SimpleHandler(bool is_alloy_style);
   ~SimpleHandler() override;
 
   // Provide access to the single global instance of this object.
@@ -48,14 +48,14 @@ class SimpleHandler : public CefClient,
 
   bool IsClosing() const { return is_closing_; }
 
-  // Returns true if the Chrome runtime is enabled.
-  static bool IsChromeRuntimeEnabled();
-
  private:
   // Platform-specific implementation.
   void PlatformTitleChange(CefRefPtr<CefBrowser> browser,
                            const CefString& title);
   void PlatformShowWindow(CefRefPtr<CefBrowser> browser);
+
+  // True if this client is Alloy style, otherwise Chrome style.
+  const bool is_alloy_style_;
 
   // List of existing browser windows. Only accessed on the CEF UI thread.
   typedef std::list<CefRefPtr<CefBrowser>> BrowserList;

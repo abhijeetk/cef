@@ -8,9 +8,10 @@
 
 #include <memory>
 
-#include "libcef/browser/request_context_impl.h"
-
+#include "base/memory/raw_ptr.h"
+#include "cef/libcef/browser/request_context_impl.h"
 #include "chrome/browser/chrome_content_browser_client.h"
+#include "content/public/browser/web_contents_view_delegate.h"
 
 class ChromeBrowserMainExtraPartsCef;
 
@@ -24,6 +25,8 @@ class ChromeContentBrowserClientCef : public ChromeContentBrowserClient {
       const ChromeContentBrowserClientCef&) = delete;
 
   ~ChromeContentBrowserClientCef() override;
+
+  void CleanupOnUIThread() override;
 
   // ChromeContentBrowserClient overrides.
   std::unique_ptr<content::BrowserMainParts> CreateBrowserMainParts(
@@ -61,6 +64,7 @@ class ChromeContentBrowserClientCef : public ChromeContentBrowserClient {
       int render_process_id,
       URLLoaderFactoryType type,
       const url::Origin& request_initiator,
+      const net::IsolationInfo& isolation_info,
       std::optional<int64_t> navigation_id,
       ukm::SourceIdObj ukm_source_id,
       network::URLLoaderFactoryBuilder& factory_builder,
@@ -117,8 +121,6 @@ class ChromeContentBrowserClientCef : public ChromeContentBrowserClient {
       scoped_refptr<net::HttpResponseHeaders> response_headers,
       bool first_auth_attempt,
       LoginAuthRequiredCallback auth_required_callback) override;
-  void BrowserURLHandlerCreated(content::BrowserURLHandler* handler) override;
-  bool IsWebUIAllowedToMakeNetworkRequests(const url::Origin& origin) override;
   void ExposeInterfacesToRenderer(
       service_manager::BinderRegistry* registry,
       blink::AssociatedInterfaceRegistry* associated_registry,
@@ -126,6 +128,8 @@ class ChromeContentBrowserClientCef : public ChromeContentBrowserClient {
   void RegisterBrowserInterfaceBindersForFrame(
       content::RenderFrameHost* render_frame_host,
       mojo::BinderMapWithContext<content::RenderFrameHost*>* map) override;
+  std::unique_ptr<content::WebContentsViewDelegate> GetWebContentsViewDelegate(
+      content::WebContents* web_contents) override;
 
   CefRefPtr<CefRequestContextImpl> request_context() const;
 
@@ -134,7 +138,10 @@ class ChromeContentBrowserClientCef : public ChromeContentBrowserClient {
   scoped_refptr<base::SingleThreadTaskRunner> user_blocking_task_runner() const;
 
  private:
-  ChromeBrowserMainExtraPartsCef* browser_main_parts_ = nullptr;
+  static std::unique_ptr<content::WebContentsViewDelegate>
+  CreateWebContentsViewDelegate(content::WebContents* web_contents);
+
+  raw_ptr<ChromeBrowserMainExtraPartsCef> browser_main_parts_ = nullptr;
 };
 
 #endif  // CEF_LIBCEF_BROWSER_CHROME_CHROME_CONTENT_BROWSER_CLIENT_CEF_

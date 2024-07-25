@@ -9,14 +9,14 @@
 // implementations. See the translator.README.txt file in the tools directory
 // for more information.
 //
-// $hash=c1afe37bef47447905f9dc6b6ba56f550e24021f$
+// $hash=434a753c90262b051077f7a79f3106ac52ffbf75$
 //
 
 #include "libcef_dll/cpptoc/browser_host_cpptoc.h"
+
 #include "libcef_dll/cpptoc/browser_cpptoc.h"
 #include "libcef_dll/cpptoc/dictionary_value_cpptoc.h"
 #include "libcef_dll/cpptoc/drag_data_cpptoc.h"
-#include "libcef_dll/cpptoc/extension_cpptoc.h"
 #include "libcef_dll/cpptoc/navigation_entry_cpptoc.h"
 #include "libcef_dll/cpptoc/registration_cpptoc.h"
 #include "libcef_dll/cpptoc/request_context_cpptoc.h"
@@ -1366,43 +1366,6 @@ browser_host_set_auto_resize_enabled(struct _cef_browser_host_t* self,
       enabled ? true : false, min_sizeVal, max_sizeVal);
 }
 
-struct _cef_extension_t* CEF_CALLBACK
-browser_host_get_extension(struct _cef_browser_host_t* self) {
-  shutdown_checker::AssertNotShutdown();
-
-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
-
-  DCHECK(self);
-  if (!self) {
-    return NULL;
-  }
-
-  // Execute
-  CefRefPtr<CefExtension> _retval =
-      CefBrowserHostCppToC::Get(self)->GetExtension();
-
-  // Return type: refptr_same
-  return CefExtensionCppToC::Wrap(_retval);
-}
-
-int CEF_CALLBACK
-browser_host_is_background_host(struct _cef_browser_host_t* self) {
-  shutdown_checker::AssertNotShutdown();
-
-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
-
-  DCHECK(self);
-  if (!self) {
-    return 0;
-  }
-
-  // Execute
-  bool _retval = CefBrowserHostCppToC::Get(self)->IsBackgroundHost();
-
-  // Return type: bool
-  return _retval;
-}
-
 void CEF_CALLBACK browser_host_set_audio_muted(struct _cef_browser_host_t* self,
                                                int mute) {
   shutdown_checker::AssertNotShutdown();
@@ -1506,6 +1469,43 @@ browser_host_execute_chrome_command(struct _cef_browser_host_t* self,
                                                         disposition);
 }
 
+int CEF_CALLBACK
+browser_host_is_render_process_unresponsive(struct _cef_browser_host_t* self) {
+  shutdown_checker::AssertNotShutdown();
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  DCHECK(self);
+  if (!self) {
+    return 0;
+  }
+
+  // Execute
+  bool _retval = CefBrowserHostCppToC::Get(self)->IsRenderProcessUnresponsive();
+
+  // Return type: bool
+  return _retval;
+}
+
+cef_runtime_style_t CEF_CALLBACK
+browser_host_get_runtime_style(struct _cef_browser_host_t* self) {
+  shutdown_checker::AssertNotShutdown();
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  DCHECK(self);
+  if (!self) {
+    return CEF_RUNTIME_STYLE_DEFAULT;
+  }
+
+  // Execute
+  cef_runtime_style_t _retval =
+      CefBrowserHostCppToC::Get(self)->GetRuntimeStyle();
+
+  // Return type: simple
+  return _retval;
+}
+
 }  // namespace
 
 // CONSTRUCTOR - Do not edit by hand.
@@ -1579,8 +1579,6 @@ CefBrowserHostCppToC::CefBrowserHostCppToC() {
       browser_host_get_visible_navigation_entry;
   GetStruct()->set_accessibility_state = browser_host_set_accessibility_state;
   GetStruct()->set_auto_resize_enabled = browser_host_set_auto_resize_enabled;
-  GetStruct()->get_extension = browser_host_get_extension;
-  GetStruct()->is_background_host = browser_host_is_background_host;
   GetStruct()->set_audio_muted = browser_host_set_audio_muted;
   GetStruct()->is_audio_muted = browser_host_is_audio_muted;
   GetStruct()->is_fullscreen = browser_host_is_fullscreen;
@@ -1588,6 +1586,9 @@ CefBrowserHostCppToC::CefBrowserHostCppToC() {
   GetStruct()->can_execute_chrome_command =
       browser_host_can_execute_chrome_command;
   GetStruct()->execute_chrome_command = browser_host_execute_chrome_command;
+  GetStruct()->is_render_process_unresponsive =
+      browser_host_is_render_process_unresponsive;
+  GetStruct()->get_runtime_style = browser_host_get_runtime_style;
 }
 
 // DESTRUCTOR - Do not edit by hand.

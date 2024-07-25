@@ -9,10 +9,11 @@
 // implementations. See the translator.README.txt file in the tools directory
 // for more information.
 //
-// $hash=a49624e0b20c4a50ff719c492d7101099646000f$
+// $hash=6ebaa8a85615b3a4ea46cf32893e4297667f81a4$
 //
 
 #include "libcef_dll/ctocpp/views/window_ctocpp.h"
+
 #include "libcef_dll/cpptoc/views/view_delegate_cpptoc.h"
 #include "libcef_dll/cpptoc/views/window_delegate_cpptoc.h"
 #include "libcef_dll/ctocpp/image_ctocpp.h"
@@ -707,6 +708,53 @@ NO_SANITIZE("cfi-icall") void CefWindowCToCpp::RemoveAllAccelerators() {
 
   // Execute
   _struct->remove_all_accelerators(_struct);
+}
+
+NO_SANITIZE("cfi-icall")
+void CefWindowCToCpp::SetThemeColor(int color_id, cef_color_t color) {
+  shutdown_checker::AssertNotShutdown();
+
+  cef_window_t* _struct = GetStruct();
+  if (CEF_MEMBER_MISSING(_struct, set_theme_color)) {
+    return;
+  }
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Execute
+  _struct->set_theme_color(_struct, color_id, color);
+}
+
+NO_SANITIZE("cfi-icall") void CefWindowCToCpp::ThemeChanged() {
+  shutdown_checker::AssertNotShutdown();
+
+  cef_window_t* _struct = GetStruct();
+  if (CEF_MEMBER_MISSING(_struct, theme_changed)) {
+    return;
+  }
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Execute
+  _struct->theme_changed(_struct);
+}
+
+NO_SANITIZE("cfi-icall")
+cef_runtime_style_t CefWindowCToCpp::GetRuntimeStyle() {
+  shutdown_checker::AssertNotShutdown();
+
+  cef_window_t* _struct = GetStruct();
+  if (CEF_MEMBER_MISSING(_struct, get_runtime_style)) {
+    return CEF_RUNTIME_STYLE_DEFAULT;
+  }
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Execute
+  cef_runtime_style_t _retval = _struct->get_runtime_style(_struct);
+
+  // Return type: simple
+  return _retval;
 }
 
 NO_SANITIZE("cfi-icall") CefRefPtr<CefWindow> CefWindowCToCpp::AsWindow() {
@@ -1662,6 +1710,24 @@ NO_SANITIZE("cfi-icall") cef_color_t CefWindowCToCpp::GetBackgroundColor() {
 
   // Execute
   cef_color_t _retval = _struct->get_background_color(_struct);
+
+  // Return type: simple
+  return _retval;
+}
+
+NO_SANITIZE("cfi-icall")
+cef_color_t CefWindowCToCpp::GetThemeColor(int color_id) {
+  shutdown_checker::AssertNotShutdown();
+
+  cef_view_t* _struct = reinterpret_cast<cef_view_t*>(GetStruct());
+  if (CEF_MEMBER_MISSING(_struct, get_theme_color)) {
+    return 0;
+  }
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Execute
+  cef_color_t _retval = _struct->get_theme_color(_struct, color_id);
 
   // Return type: simple
   return _retval;

@@ -11,6 +11,7 @@
 #include "include/cef_request_context.h"
 #include "include/cef_request_context_handler.h"
 #include "include/cef_scheme.h"
+#include "include/test/cef_test_helpers.h"
 #include "include/wrapper/cef_closure_task.h"
 #include "tests/ceftests/test_handler.h"
 #include "tests/ceftests/test_suite.h"
@@ -118,7 +119,7 @@ class TestSchemeHandler : public TestHandler {
       CefRefPtr<CefFrame> frame,
       CefRefPtr<CefRequest> request,
       CefRefPtr<CefCallback> callback) override {
-    if (IsChromeRuntimeEnabled() && request->GetResourceType() == RT_FAVICON) {
+    if (request->GetResourceType() == RT_FAVICON) {
       // Ignore favicon requests.
       return RV_CANCEL;
     }
@@ -420,7 +421,7 @@ class ClientSchemeHandler : public CefResourceHandler {
             CefRefPtr<CefCallback> callback) override {
     EXPECT_FALSE(CefCurrentlyOn(TID_UI) || CefCurrentlyOn(TID_IO));
 
-    if (IsChromeRuntimeEnabled() && request->GetResourceType() == RT_FAVICON) {
+    if (request->GetResourceType() == RT_FAVICON) {
       // Ignore favicon requests.
       return false;
     }
@@ -465,7 +466,13 @@ class ClientSchemeHandler : public CefResourceHandler {
       // CEF_SETTINGS_ACCEPT_LANGUAGE value from
       // CefSettings.accept_language_list set in CefTestSuite::GetSettings()
       // and expanded internally by ComputeAcceptLanguageFromPref.
-      EXPECT_STREQ("en-GB,en;q=0.9", accept_language.data());
+      if (CefIsFeatureEnabledForTests("ReduceAcceptLanguage")) {
+        EXPECT_TRUE(accept_language == "en-GB" ||
+                    accept_language == "en-GB,en;q=0.9")
+            << accept_language;
+      } else {
+        EXPECT_STREQ("en-GB,en;q=0.9", accept_language.data());
+      }
     }
 
     // Continue or cancel the request immediately based on the return value.
@@ -495,7 +502,7 @@ class ClientSchemeHandler : public CefResourceHandler {
 
   bool ProcessRequest(CefRefPtr<CefRequest> request,
                       CefRefPtr<CefCallback> callback) override {
-    if (IsChromeRuntimeEnabled() && request->GetResourceType() == RT_FAVICON) {
+    if (request->GetResourceType() == RT_FAVICON) {
       // Ignore favicon requests.
       return false;
     }
@@ -1437,7 +1444,7 @@ TEST(SchemeHandlerTest, CustomStandardXHRDifferentOriginSync) {
   EXPECT_TRUE(test_results.got_read);
   EXPECT_TRUE(test_results.got_output);
   EXPECT_TRUE(test_results.got_sub_request);
-  EXPECT_TRUE(test_results.got_sub_read);
+  EXPECT_FALSE(test_results.got_sub_read);
   EXPECT_FALSE(test_results.git_exit_success);
 
   ClearTestSchemes(&test_results);
@@ -1470,7 +1477,7 @@ TEST(SchemeHandlerTest, CustomStandardXHRDifferentOriginAsync) {
   EXPECT_TRUE(test_results.got_read);
   EXPECT_TRUE(test_results.got_output);
   EXPECT_TRUE(test_results.got_sub_request);
-  EXPECT_TRUE(test_results.got_sub_read);
+  EXPECT_FALSE(test_results.got_sub_read);
   EXPECT_FALSE(test_results.git_exit_success);
 
   ClearTestSchemes(&test_results);
@@ -1503,7 +1510,7 @@ TEST(SchemeHandlerTest, CustomStandardFetchDifferentOrigin) {
   EXPECT_TRUE(test_results.got_read);
   EXPECT_TRUE(test_results.got_output);
   EXPECT_TRUE(test_results.got_sub_request);
-  EXPECT_TRUE(test_results.got_sub_read);
+  EXPECT_FALSE(test_results.got_sub_read);
   EXPECT_FALSE(test_results.git_exit_success);
 
   ClearTestSchemes(&test_results);
@@ -1676,7 +1683,7 @@ TEST(SchemeHandlerTest, HttpXHRDifferentOriginSync) {
   EXPECT_TRUE(test_results.got_read);
   EXPECT_TRUE(test_results.got_output);
   EXPECT_TRUE(test_results.got_sub_request);
-  EXPECT_TRUE(test_results.got_sub_read);
+  EXPECT_FALSE(test_results.got_sub_read);
   EXPECT_FALSE(test_results.git_exit_success);
 
   ClearTestSchemes(&test_results);
@@ -1709,7 +1716,7 @@ TEST(SchemeHandlerTest, HttpXHRDifferentOriginAsync) {
   EXPECT_TRUE(test_results.got_read);
   EXPECT_TRUE(test_results.got_output);
   EXPECT_TRUE(test_results.got_sub_request);
-  EXPECT_TRUE(test_results.got_sub_read);
+  EXPECT_FALSE(test_results.got_sub_read);
   EXPECT_FALSE(test_results.git_exit_success);
 
   ClearTestSchemes(&test_results);
@@ -1743,7 +1750,7 @@ TEST(SchemeHandlerTest, HttpFetchDifferentOriginAsync) {
   EXPECT_TRUE(test_results.got_read);
   EXPECT_TRUE(test_results.got_output);
   EXPECT_TRUE(test_results.got_sub_request);
-  EXPECT_TRUE(test_results.got_sub_read);
+  EXPECT_FALSE(test_results.got_sub_read);
   EXPECT_FALSE(test_results.git_exit_success);
 
   ClearTestSchemes(&test_results);
@@ -2311,7 +2318,7 @@ TEST(SchemeHandlerTest, CustomStandardXHRDifferentOriginRedirectSync) {
   EXPECT_TRUE(test_results.got_output);
   EXPECT_TRUE(test_results.got_sub_redirect);
   EXPECT_TRUE(test_results.got_sub_request);
-  EXPECT_TRUE(test_results.got_sub_read);
+  EXPECT_FALSE(test_results.got_sub_read);
   EXPECT_FALSE(test_results.git_exit_success);
 
   ClearTestSchemes(&test_results);
@@ -2346,7 +2353,7 @@ TEST(SchemeHandlerTest, CustomStandardXHRDifferentOriginRedirectAsync) {
   EXPECT_TRUE(test_results.got_output);
   EXPECT_TRUE(test_results.got_sub_redirect);
   EXPECT_TRUE(test_results.got_sub_request);
-  EXPECT_TRUE(test_results.got_sub_read);
+  EXPECT_FALSE(test_results.got_sub_read);
   EXPECT_FALSE(test_results.git_exit_success);
 
   ClearTestSchemes(&test_results);
@@ -2382,7 +2389,7 @@ TEST(SchemeHandlerTest, CustomStandardFetchDifferentOriginRedirect) {
   EXPECT_TRUE(test_results.got_output);
   EXPECT_TRUE(test_results.got_sub_redirect);
   EXPECT_TRUE(test_results.got_sub_request);
-  EXPECT_TRUE(test_results.got_sub_read);
+  EXPECT_FALSE(test_results.got_sub_read);
   EXPECT_FALSE(test_results.git_exit_success);
 
   ClearTestSchemes(&test_results);

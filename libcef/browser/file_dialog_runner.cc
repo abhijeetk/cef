@@ -3,11 +3,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "libcef/browser/file_dialog_runner.h"
+#include "cef/libcef/browser/file_dialog_runner.h"
 
-#include "libcef/browser/browser_host_base.h"
-#include "libcef/browser/extensions/browser_extensions_util.h"
-
+#include "cef/libcef/browser/browser_host_base.h"
 #include "chrome/browser/file_select_helper.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "ui/shell_dialogs/select_file_dialog_factory.h"
@@ -41,6 +39,8 @@ class CefSelectFileDialogFactory final : public ui::SelectFileDialogFactory {
 // Delegates the running of the dialog to CefFileDialogManager.
 class CefSelectFileDialog final : public ui::SelectFileDialog {
  public:
+  // |listener| is not owned by this object. It will remain valid until
+  // ListenerDestroyed() is called.
   CefSelectFileDialog(ui::SelectFileDialog::Listener* listener,
                       std::unique_ptr<ui::SelectFilePolicy> policy)
       : ui::SelectFileDialog(listener, std::move(policy)) {
@@ -69,8 +69,7 @@ class CefSelectFileDialog final : public ui::SelectFileDialog {
           static_cast<ChromeSelectFilePolicy*>(select_file_policy_.get());
       auto web_contents = chrome_policy->source_contents();
       if (web_contents) {
-        browser_ = extensions::GetOwnerBrowserForHost(
-            web_contents->GetRenderViewHost(), nullptr);
+        browser_ = CefBrowserHostBase::GetBrowserForContents(web_contents);
       }
       if (!browser_) {
         LOG(WARNING) << "No browser associated with SelectFilePolicy";

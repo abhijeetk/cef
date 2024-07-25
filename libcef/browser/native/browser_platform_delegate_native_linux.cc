@@ -2,17 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "libcef/browser/native/browser_platform_delegate_native_linux.h"
-
-#include "libcef/browser/browser_host_base.h"
-#include "libcef/browser/context.h"
-#include "libcef/browser/native/window_delegate_view.h"
-#include "libcef/browser/thread_util.h"
+#include "cef/libcef/browser/native/browser_platform_delegate_native_linux.h"
 
 #include "base/no_destructor.h"
+#include "cef/libcef/browser/browser_host_base.h"
+#include "cef/libcef/browser/context.h"
+#include "cef/libcef/browser/native/window_delegate_view.h"
+#include "cef/libcef/browser/thread_util.h"
+#include "components/input/native_web_keyboard_event.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/public/browser/render_view_host.h"
-#include "content/public/common/input/native_web_keyboard_event.h"
 #include "third_party/blink/public/mojom/renderer_preferences.mojom.h"
 #include "ui/events/keycodes/dom/dom_key.h"
 #include "ui/events/keycodes/dom/keycode_converter.h"
@@ -21,7 +20,7 @@
 #include "ui/views/widget/widget.h"
 
 #if BUILDFLAG(IS_OZONE_X11)
-#include "libcef/browser/native/window_x11.h"
+#include "cef/libcef/browser/native/window_x11.h"
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
 #include "ui/events/keycodes/keyboard_code_conversion_xkb.h"
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host_linux.h"
@@ -66,7 +65,7 @@ bool CefBrowserPlatformDelegateNativeLinux::CreateHostWindow() {
   // Create a new window object. It will delete itself when the associated X11
   // window is destroyed.
   window_x11_ =
-      new CefWindowX11(browser_, parent_window, rect,
+      new CefWindowX11(browser_.get(), parent_window, rect,
                        CefString(&window_info_.window_name).ToString());
   DCHECK_NE(window_x11_->xwindow(), x11::Window::None);
   window_info_.window =
@@ -228,13 +227,13 @@ void CefBrowserPlatformDelegateNativeLinux::ViewText(const std::string& text) {
 }
 
 bool CefBrowserPlatformDelegateNativeLinux::HandleKeyboardEvent(
-    const content::NativeWebKeyboardEvent& event) {
+    const input::NativeWebKeyboardEvent& event) {
   // TODO(cef): Is something required here to handle shortcut keys?
   return false;
 }
 
 CefEventHandle CefBrowserPlatformDelegateNativeLinux::GetEventHandle(
-    const content::NativeWebKeyboardEvent& event) const {
+    const input::NativeWebKeyboardEvent& event) const {
   // TODO(cef): We need to return an XEvent* from this method, but
   // |event.os_event->native_event()| now returns a ui::Event* instead.
   // See https://crbug.com/965991.
@@ -286,12 +285,12 @@ ui::KeyEvent CefBrowserPlatformDelegateNativeLinux::TranslateUiKeyEvent(
   return ui::KeyEvent(type, key_code, dom_code, flags, dom_key, time_stamp);
 }
 
-content::NativeWebKeyboardEvent
+input::NativeWebKeyboardEvent
 CefBrowserPlatformDelegateNativeLinux::TranslateWebKeyEvent(
     const CefKeyEvent& key_event) const {
   ui::KeyEvent ui_event = TranslateUiKeyEvent(key_event);
   if (key_event.type == KEYEVENT_CHAR) {
-    return content::NativeWebKeyboardEvent(ui_event, key_event.character);
+    return input::NativeWebKeyboardEvent(ui_event, key_event.character);
   }
-  return content::NativeWebKeyboardEvent(ui_event);
+  return input::NativeWebKeyboardEvent(ui_event);
 }

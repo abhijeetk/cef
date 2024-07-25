@@ -3,36 +3,35 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "libcef/browser/chrome/chrome_content_browser_client_cef.h"
+#include "cef/libcef/browser/chrome/chrome_content_browser_client_cef.h"
 
 #include <tuple>
 
-#include "libcef/browser/browser_frame.h"
-#include "libcef/browser/browser_info_manager.h"
-#include "libcef/browser/browser_manager.h"
-#include "libcef/browser/certificate_query.h"
-#include "libcef/browser/chrome/chrome_browser_host_impl.h"
-#include "libcef/browser/chrome/chrome_browser_main_extra_parts_cef.h"
-#include "libcef/browser/context.h"
-#include "libcef/browser/net/chrome_scheme_handler.h"
-#include "libcef/browser/net/throttle_handler.h"
-#include "libcef/browser/net_service/cookie_manager_impl.h"
-#include "libcef/browser/net_service/login_delegate.h"
-#include "libcef/browser/net_service/proxy_url_loader_factory.h"
-#include "libcef/browser/net_service/resource_request_handler_wrapper.h"
-#include "libcef/browser/prefs/browser_prefs.h"
-#include "libcef/browser/prefs/renderer_prefs.h"
-#include "libcef/common/app_manager.h"
-#include "libcef/common/cef_switches.h"
-#include "libcef/common/command_line_impl.h"
-
 #include "base/command_line.h"
 #include "base/path_service.h"
+#include "cef/libcef/browser/browser_frame.h"
+#include "cef/libcef/browser/browser_host_base.h"
+#include "cef/libcef/browser/browser_info_manager.h"
+#include "cef/libcef/browser/browser_manager.h"
+#include "cef/libcef/browser/certificate_query.h"
+#include "cef/libcef/browser/chrome/chrome_browser_main_extra_parts_cef.h"
+#include "cef/libcef/browser/context.h"
+#include "cef/libcef/browser/net/throttle_handler.h"
+#include "cef/libcef/browser/net_service/cookie_manager_impl.h"
+#include "cef/libcef/browser/net_service/login_delegate.h"
+#include "cef/libcef/browser/net_service/proxy_url_loader_factory.h"
+#include "cef/libcef/browser/net_service/resource_request_handler_wrapper.h"
+#include "cef/libcef/browser/prefs/browser_prefs.h"
+#include "cef/libcef/browser/prefs/renderer_prefs.h"
+#include "cef/libcef/common/app_manager.h"
+#include "cef/libcef/common/cef_switches.h"
+#include "cef/libcef/common/command_line_impl.h"
 #include "chrome/browser/chrome_browser_main.h"
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/performance_manager/embedder/performance_manager_registry.h"
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -42,6 +41,10 @@
 #include "content/public/common/content_switches.h"
 #include "third_party/blink/public/common/web_preferences/web_preferences.h"
 #include "third_party/blink/public/mojom/loader/resource_load_info.mojom-shared.h"
+
+#if !BUILDFLAG(IS_MAC)
+#include "cef/libcef/browser/chrome/chrome_web_contents_view_delegate_cef.h"
+#endif
 
 namespace {
 
@@ -79,6 +82,11 @@ void HandleExternalProtocolHelper(
 ChromeContentBrowserClientCef::ChromeContentBrowserClientCef() = default;
 ChromeContentBrowserClientCef::~ChromeContentBrowserClientCef() = default;
 
+void ChromeContentBrowserClientCef::CleanupOnUIThread() {
+  browser_main_parts_ = nullptr;
+  ChromeContentBrowserClient::CleanupOnUIThread();
+}
+
 std::unique_ptr<content::BrowserMainParts>
 ChromeContentBrowserClientCef::CreateBrowserMainParts(
     bool is_integration_test) {
@@ -97,9 +105,6 @@ void ChromeContentBrowserClientCef::AppendExtraCommandLineSwitches(
   ChromeContentBrowserClient::AppendExtraCommandLineSwitches(command_line,
                                                              child_process_id);
 
-  // Necessary to launch sub-processes in the correct mode.
-  command_line->AppendSwitch(switches::kEnableChromeRuntime);
-
   // Necessary to populate DIR_USER_DATA in sub-processes.
   // See resource_util.cc GetUserDataPath.
   base::FilePath user_data_dir;
@@ -113,6 +118,14 @@ void ChromeContentBrowserClientCef::AppendExtraCommandLineSwitches(
     // Propagate the following switches to all command lines (along with any
     // associated values) if present in the browser command line.
     static const char* const kSwitchNames[] = {
+#if BUILDFLAG(IS_MAC)
+        switches::kFrameworkDirPath,
+        switches::kMainBundlePath,
+#endif
+        switches::kLocalesDirPath,
+        switches::kLogItems,
+        switches::kLogSeverity,
+        switches::kResourcesDirPath,
         switches::kUserAgentProductAndVersion,
     };
     command_line->CopySwitchesFrom(*browser_cmd, kSwitchNames);
@@ -120,6 +133,19 @@ void ChromeContentBrowserClientCef::AppendExtraCommandLineSwitches(
 
   const std::string& process_type =
       command_line->GetSwitchValueASCII(switches::kProcessType);
+
+#if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_MAC)
+  if (process_type == switches::kZygoteProcess &&
+      browser_cmd->HasSwitch(switches::kBrowserSubprocessPath)) {
+    // Force use of the sub-process executable path for the zygote process.
+    const base::FilePath& subprocess_path =
+        browser_cmd->GetSwitchValuePath(switches::kBrowserSubprocessPath);
+    if (!subprocess_path.empty()) {
+      command_line->SetProgram(subprocess_path);
+    }
+  }
+#endif
+
   if (process_type == switches::kRendererProcess) {
     // Propagate the following switches to the renderer command line (along with
     // any associated values) if present in the browser command line.
@@ -210,7 +236,7 @@ void ChromeContentBrowserClientCef::OverrideWebkitPrefs(
   ChromeContentBrowserClient::OverrideWebkitPrefs(web_contents, prefs);
 
   SkColor base_background_color;
-  auto browser = ChromeBrowserHostImpl::GetBrowserForContents(web_contents);
+  auto browser = CefBrowserHostBase::GetBrowserForContents(web_contents);
   if (browser) {
     renderer_prefs::SetCefPrefs(browser->settings(), *prefs);
 
@@ -232,6 +258,7 @@ void ChromeContentBrowserClientCef::WillCreateURLLoaderFactory(
     int render_process_id,
     URLLoaderFactoryType type,
     const url::Origin& request_initiator,
+    const net::IsolationInfo& isolation_info,
     std::optional<int64_t> navigation_id,
     ukm::SourceIdObj ukm_source_id,
     network::URLLoaderFactoryBuilder& factory_builder,
@@ -248,9 +275,9 @@ void ChromeContentBrowserClientCef::WillCreateURLLoaderFactory(
   if (!CefBrowserContext::FromProfile(profile)) {
     ChromeContentBrowserClient::WillCreateURLLoaderFactory(
         browser_context, frame, render_process_id, type, request_initiator,
-        navigation_id, ukm_source_id, factory_builder, header_client,
-        bypass_redirect_checks, disable_secure_dns, factory_override,
-        navigation_response_task_runner);
+        isolation_info, navigation_id, ukm_source_id, factory_builder,
+        header_client, bypass_redirect_checks, disable_secure_dns,
+        factory_override, navigation_response_task_runner);
     return;
   }
 
@@ -279,7 +306,7 @@ void ChromeContentBrowserClientCef::WillCreateURLLoaderFactory(
   // TODO(chrome): Is it necessary to proxy |header_client| callbacks?
   ChromeContentBrowserClient::WillCreateURLLoaderFactory(
       browser_context, frame, render_process_id, type, request_initiator,
-      navigation_id, ukm_source_id, factory_builder,
+      isolation_info, navigation_id, ukm_source_id, factory_builder,
       /*header_client=*/nullptr, bypass_redirect_checks, disable_secure_dns,
       handler_override, navigation_response_task_runner);
 
@@ -438,18 +465,6 @@ ChromeContentBrowserClientCef::CreateLoginDelegate(
       std::move(auth_required_callback));
 }
 
-void ChromeContentBrowserClientCef::BrowserURLHandlerCreated(
-    content::BrowserURLHandler* handler) {
-  // Register the Chrome handlers first for proper URL rewriting.
-  ChromeContentBrowserClient::BrowserURLHandlerCreated(handler);
-  scheme::BrowserURLHandlerCreated(handler);
-}
-
-bool ChromeContentBrowserClientCef::IsWebUIAllowedToMakeNetworkRequests(
-    const url::Origin& origin) {
-  return scheme::IsWebUIAllowedToMakeNetworkRequests(origin);
-}
-
 void ChromeContentBrowserClientCef::ExposeInterfacesToRenderer(
     service_manager::BinderRegistry* registry,
     blink::AssociatedInterfaceRegistry* associated_registry,
@@ -471,6 +486,22 @@ void ChromeContentBrowserClientCef::RegisterBrowserInterfaceBindersForFrame(
                                                            map);
 }
 
+std::unique_ptr<content::WebContentsViewDelegate>
+ChromeContentBrowserClientCef::GetWebContentsViewDelegate(
+    content::WebContents* web_contents) {
+  // From ChromeContentBrowserClient::GetWebContentsViewDelegate. Windowless
+  // browsers don't call this method and use
+  // CefBrowserPlatformDelegateAlloy::AttachHelpers instead.
+  if (auto* registry =
+          performance_manager::PerformanceManagerRegistry::GetInstance()) {
+    registry->MaybeCreatePageNodeForWebContents(web_contents);
+  }
+
+  // Used to customize context menu behavior for Alloy style. Called during
+  // WebContents::Create() so we don't yet have an associated BrowserHost.
+  return CreateWebContentsViewDelegate(web_contents);
+}
+
 CefRefPtr<CefRequestContextImpl>
 ChromeContentBrowserClientCef::request_context() const {
   return browser_main_parts_->request_context();
@@ -490,3 +521,15 @@ scoped_refptr<base::SingleThreadTaskRunner>
 ChromeContentBrowserClientCef::user_blocking_task_runner() const {
   return browser_main_parts_->user_blocking_task_runner();
 }
+
+#if !BUILDFLAG(IS_MAC)
+// Defined in a separate .mm file on MacOS to work around
+// ChromeWebContentsViewDelegateViewsMac containing ObjC references.
+
+// static
+std::unique_ptr<content::WebContentsViewDelegate>
+ChromeContentBrowserClientCef::CreateWebContentsViewDelegate(
+    content::WebContents* web_contents) {
+  return std::make_unique<ChromeWebContentsViewDelegateCef>(web_contents);
+}
+#endif

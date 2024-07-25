@@ -74,14 +74,6 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
   // Specify CEF global settings here.
   CefSettings settings;
 
-  // Use the CEF Chrome runtime if "--enable-chrome-runtime" is specified via
-  // the command-line. Otherwise, use the CEF Alloy runtime. For more
-  // information about CEF runtimes see
-  // https://bitbucket.org/chromiumembedded/cef/wiki/Architecture.md#markdown-header-cef3
-  if (command_line->HasSwitch("enable-chrome-runtime")) {
-    settings.chrome_runtime = true;
-  }
-
 #if !defined(CEF_USE_SANDBOX)
   settings.no_sandbox = true;
 #endif
@@ -95,7 +87,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
   // fails or if early exit is desired (for example, due to process singleton
   // relaunch behavior).
   if (!CefInitialize(main_args, settings, app.get(), sandbox_info)) {
-    return 1;
+    return CefGetExitCode();
   }
 
   // Run the CEF message loop. This will block until CefQuitMessageLoop() is

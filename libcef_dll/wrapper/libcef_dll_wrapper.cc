@@ -9,7 +9,7 @@
 // implementations. See the translator.README.txt file in the tools directory
 // for more information.
 //
-// $hash=f2b284f21cdb59e621ecddbe2f07392d24d48ddd$
+// $hash=e9099c29c9695cabcedfde25b85c1f77f14cb516$
 //
 
 #include "include/capi/cef_app_capi.h"
@@ -106,15 +106,25 @@ CEF_GLOBAL bool CefInitialize(const CefMainArgs& args,
   return _retval ? true : false;
 }
 
+NO_SANITIZE("cfi-icall") CEF_GLOBAL int CefGetExitCode() {
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Execute
+  int _retval = cef_get_exit_code();
+
+  // Return type: simple
+  return _retval;
+}
+
 NO_SANITIZE("cfi-icall") CEF_GLOBAL void CefShutdown() {
   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Execute
+  cef_shutdown();
 
 #if DCHECK_IS_ON()
   shutdown_checker::SetIsShutdown();
 #endif
-
-  // Execute
-  cef_shutdown();
 }
 
 NO_SANITIZE("cfi-icall") CEF_GLOBAL void CefDoMessageLoopWork() {
@@ -874,4 +884,21 @@ CEF_GLOBAL void CefSetDataDirectoryForTests(const CefString& dir) {
 
   // Execute
   cef_set_data_directory_for_tests(dir.GetStruct());
+}
+
+NO_SANITIZE("cfi-icall")
+CEF_GLOBAL bool CefIsFeatureEnabledForTests(const CefString& feature_name) {
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Verify param: feature_name; type: string_byref_const
+  DCHECK(!feature_name.empty());
+  if (feature_name.empty()) {
+    return false;
+  }
+
+  // Execute
+  int _retval = cef_is_feature_enabled_for_tests(feature_name.GetStruct());
+
+  // Return type: bool
+  return _retval ? true : false;
 }

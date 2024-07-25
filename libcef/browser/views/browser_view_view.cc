@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be found
 // in the LICENSE file.
 
-#include "libcef/browser/views/browser_view_view.h"
+#include "cef/libcef/browser/views/browser_view_view.h"
 
-#include "libcef/browser/views/browser_view_impl.h"
+#include "cef/libcef/browser/views/browser_view_impl.h"
 
 CefBrowserViewView::CefBrowserViewView(CefBrowserViewDelegate* cef_delegate,
                                        Delegate* browser_view_delegate)
@@ -29,8 +29,6 @@ void CefBrowserViewView::ViewHierarchyChanged(
         SetSize(size);
       }
     }
-
-    browser_view_delegate_->OnBrowserViewAdded();
   }
 }
 
@@ -44,4 +42,14 @@ void CefBrowserViewView::OnGestureEvent(ui::GestureEvent* event) {
     return;
   }
   ParentClass::OnGestureEvent(event);
+}
+
+void CefBrowserViewView::AddedToWidget() {
+  ParentClass::AddedToWidget();
+  browser_view_delegate_->AddedToWidget();
+}
+
+void CefBrowserViewView::RemovedFromWidget() {
+  ParentClass::RemovedFromWidget();
+  browser_view_delegate_->RemovedFromWidget();
 }

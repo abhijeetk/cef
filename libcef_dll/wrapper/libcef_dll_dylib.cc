@@ -9,7 +9,7 @@
 // implementations. See the translator.README.txt file in the tools directory
 // for more information.
 //
-// $hash=f882e920463e6681b19a06c9d897b09b17e27bd3$
+// $hash=fd61a77bd549fb94bba963f9c0737ebceac324ac$
 //
 
 #include <dlfcn.h>
@@ -44,6 +44,7 @@
 #include "include/capi/cef_ssl_info_capi.h"
 #include "include/capi/cef_stream_capi.h"
 #include "include/capi/cef_task_capi.h"
+#include "include/capi/cef_task_manager_capi.h"
 #include "include/capi/cef_thread_capi.h"
 #include "include/capi/cef_trace_capi.h"
 #include "include/capi/cef_urlrequest_capi.h"
@@ -65,6 +66,7 @@
 #include "include/capi/views/cef_window_capi.h"
 #include "include/cef_api_hash.h"
 #include "include/cef_version.h"
+#include "include/internal/cef_dump_without_crashing_internal.h"
 #include "include/internal/cef_logging_internal.h"
 #include "include/internal/cef_string_list.h"
 #include "include/internal/cef_string_map.h"
@@ -92,6 +94,7 @@ void* libcef_get_ptr(const char* path, const char* name) {
 struct libcef_pointers {
   decltype(&cef_execute_process) cef_execute_process;
   decltype(&cef_initialize) cef_initialize;
+  decltype(&cef_get_exit_code) cef_get_exit_code;
   decltype(&cef_shutdown) cef_shutdown;
   decltype(&cef_do_message_loop_work) cef_do_message_loop_work;
   decltype(&cef_run_message_loop) cef_run_message_loop;
@@ -145,6 +148,7 @@ struct libcef_pointers {
   decltype(&cef_execute_java_script_with_user_gesture_for_tests)
       cef_execute_java_script_with_user_gesture_for_tests;
   decltype(&cef_set_data_directory_for_tests) cef_set_data_directory_for_tests;
+  decltype(&cef_is_feature_enabled_for_tests) cef_is_feature_enabled_for_tests;
   decltype(&cef_browser_host_create_browser) cef_browser_host_create_browser;
   decltype(&cef_browser_host_create_browser_sync)
       cef_browser_host_create_browser_sync;
@@ -186,6 +190,7 @@ struct libcef_pointers {
   decltype(&cef_task_runner_get_for_current_thread)
       cef_task_runner_get_for_current_thread;
   decltype(&cef_task_runner_get_for_thread) cef_task_runner_get_for_thread;
+  decltype(&cef_task_manager_get) cef_task_manager_get;
   decltype(&cef_thread_create) cef_thread_create;
   decltype(&cef_urlrequest_create) cef_urlrequest_create;
   decltype(&cef_v8context_get_current_context)
@@ -251,6 +256,9 @@ struct libcef_pointers {
   decltype(&cef_window_create_top_level) cef_window_create_top_level;
   decltype(&cef_api_hash) cef_api_hash;
   decltype(&cef_version_info) cef_version_info;
+  decltype(&cef_dump_without_crashing) cef_dump_without_crashing;
+  decltype(&cef_dump_without_crashing_unthrottled)
+      cef_dump_without_crashing_unthrottled;
   decltype(&cef_get_min_log_level) cef_get_min_log_level;
   decltype(&cef_get_vlog_level) cef_get_vlog_level;
   decltype(&cef_log) cef_log;
@@ -337,6 +345,7 @@ struct libcef_pointers {
 int libcef_init_pointers(const char* path) {
   INIT_ENTRY(cef_execute_process);
   INIT_ENTRY(cef_initialize);
+  INIT_ENTRY(cef_get_exit_code);
   INIT_ENTRY(cef_shutdown);
   INIT_ENTRY(cef_do_message_loop_work);
   INIT_ENTRY(cef_run_message_loop);
@@ -383,6 +392,7 @@ int libcef_init_pointers(const char* path) {
   INIT_ENTRY(cef_register_extension);
   INIT_ENTRY(cef_execute_java_script_with_user_gesture_for_tests);
   INIT_ENTRY(cef_set_data_directory_for_tests);
+  INIT_ENTRY(cef_is_feature_enabled_for_tests);
   INIT_ENTRY(cef_browser_host_create_browser);
   INIT_ENTRY(cef_browser_host_create_browser_sync);
   INIT_ENTRY(cef_command_line_create);
@@ -412,6 +422,7 @@ int libcef_init_pointers(const char* path) {
   INIT_ENTRY(cef_stream_writer_create_for_handler);
   INIT_ENTRY(cef_task_runner_get_for_current_thread);
   INIT_ENTRY(cef_task_runner_get_for_thread);
+  INIT_ENTRY(cef_task_manager_get);
   INIT_ENTRY(cef_thread_create);
   INIT_ENTRY(cef_urlrequest_create);
   INIT_ENTRY(cef_v8context_get_current_context);
@@ -465,6 +476,8 @@ int libcef_init_pointers(const char* path) {
   INIT_ENTRY(cef_window_create_top_level);
   INIT_ENTRY(cef_api_hash);
   INIT_ENTRY(cef_version_info);
+  INIT_ENTRY(cef_dump_without_crashing);
+  INIT_ENTRY(cef_dump_without_crashing_unthrottled);
   INIT_ENTRY(cef_get_min_log_level);
   INIT_ENTRY(cef_get_vlog_level);
   INIT_ENTRY(cef_log);
@@ -588,6 +601,10 @@ int cef_initialize(const cef_main_args_t* args,
                    void* windows_sandbox_info) {
   return g_libcef_pointers.cef_initialize(args, settings, application,
                                           windows_sandbox_info);
+}
+
+NO_SANITIZE("cfi-icall") int cef_get_exit_code() {
+  return g_libcef_pointers.cef_get_exit_code();
 }
 
 NO_SANITIZE("cfi-icall") void cef_shutdown() {
@@ -853,6 +870,11 @@ void cef_set_data_directory_for_tests(const cef_string_t* dir) {
 }
 
 NO_SANITIZE("cfi-icall")
+int cef_is_feature_enabled_for_tests(const cef_string_t* feature_name) {
+  return g_libcef_pointers.cef_is_feature_enabled_for_tests(feature_name);
+}
+
+NO_SANITIZE("cfi-icall")
 int cef_browser_host_create_browser(
     const struct _cef_window_info_t* windowInfo,
     struct _cef_client_t* client,
@@ -1024,6 +1046,10 @@ NO_SANITIZE("cfi-icall")
 struct _cef_task_runner_t* cef_task_runner_get_for_thread(
     cef_thread_id_t threadId) {
   return g_libcef_pointers.cef_task_runner_get_for_thread(threadId);
+}
+
+NO_SANITIZE("cfi-icall") struct _cef_task_manager_t* cef_task_manager_get() {
+  return g_libcef_pointers.cef_task_manager_get();
 }
 
 NO_SANITIZE("cfi-icall")
@@ -1348,6 +1374,19 @@ NO_SANITIZE("cfi-icall") const char* cef_api_hash(int entry) {
 
 NO_SANITIZE("cfi-icall") int cef_version_info(int entry) {
   return g_libcef_pointers.cef_version_info(entry);
+}
+
+NO_SANITIZE("cfi-icall")
+int cef_dump_without_crashing(long long mseconds_between_dumps,
+                              const char* function_name,
+                              const char* file_name,
+                              int line_number) {
+  return g_libcef_pointers.cef_dump_without_crashing(
+      mseconds_between_dumps, function_name, file_name, line_number);
+}
+
+NO_SANITIZE("cfi-icall") int cef_dump_without_crashing_unthrottled() {
+  return g_libcef_pointers.cef_dump_without_crashing_unthrottled();
 }
 
 NO_SANITIZE("cfi-icall") int cef_get_min_log_level() {

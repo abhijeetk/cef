@@ -3,11 +3,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "libcef/browser/audio_capturer.h"
+#include "cef/libcef/browser/audio_capturer.h"
 
-#include "libcef/browser/alloy/alloy_browser_host_impl.h"
-#include "libcef/browser/audio_loopback_stream_creator.h"
-
+#include "cef/libcef/browser/alloy/alloy_browser_host_impl.h"
+#include "cef/libcef/browser/audio_loopback_stream_creator.h"
 #include "components/mirroring/service/captured_audio_input.h"
 #include "media/audio/audio_input_device.h"
 
@@ -98,6 +97,7 @@ void CefAudioCapturer::OnCaptureStarted() {
 
 void CefAudioCapturer::Capture(const media::AudioBus* source,
                                base::TimeTicks audio_capture_time,
+                               const media::AudioGlitchInfo& /*glitch_info*/,
                                double /*volume*/,
                                bool /*key_pressed*/) {
   const int channels = source->channels();
@@ -116,7 +116,10 @@ void CefAudioCapturer::OnCaptureError(
     media::AudioCapturerSource::ErrorCode code,
     const std::string& message) {
   audio_handler_->OnAudioStreamError(browser_, message);
-  StopStream();
+
+  if (code != media::AudioCapturerSource::ErrorCode::kSocketError) {
+    StopStream();
+  }
 }
 
 void CefAudioCapturer::StopStream() {

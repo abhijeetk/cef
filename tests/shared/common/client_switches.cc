@@ -43,9 +43,7 @@ const char kAlwaysOnTop[] = "always-on-top";
 const char kHideTopMenu[] = "hide-top-menu";
 const char kSslClientCertificate[] = "ssl-client-certificate";
 const char kCRLSetsPath[] = "crl-sets-path";
-const char kLoadExtension[] = "load-extension";
 const char kNoActivate[] = "no-activate";
-const char kEnableChromeRuntime[] = "enable-chrome-runtime";
 const char kShowChromeToolbar[] = "show-chrome-toolbar";
 const char kInitialShowState[] = "initial-show-state";
 const char kUseDefaultPopup[] = "use-default-popup";
@@ -57,5 +55,8 @@ const char kUseBottomControls[] = "use-bottom-controls";
 const char kHidePipFrame[] = "hide-pip-frame";
 const char kHideChromeBubbles[] = "hide-chrome-bubbles";
 const char kHideWindowOnClose[] = "hide-window-on-close";
+const char kAcceptsFirstMouse[] = "accepts-first-mouse";
+const char kUseAlloyStyle[] = "use-alloy-style";
+const char kUseChromeStyleWindow[] = "use-chrome-style-window";
 
 }  // namespace client::switches

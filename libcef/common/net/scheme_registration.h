@@ -9,12 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "content/public/common/content_client.h"
-
 namespace scheme {
-
-// Add internal schemes.
-void AddInternalSchemes(content::ContentClient::Schemes* schemes);
 
 // Returns true if the specified |scheme| is handled internally.
 bool IsInternalHandledScheme(const std::string& scheme);

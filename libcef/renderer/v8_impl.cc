@@ -6,6 +6,7 @@
 // Otherwise there will be compile errors in wtf/MathExtras.h.
 #define _USE_MATH_DEFINES
 
+#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -24,21 +25,19 @@
 #endif
 #endif
 
-#include "libcef/renderer/v8_impl.h"
-
-#include "libcef/common/app_manager.h"
-#include "libcef/common/cef_switches.h"
-#include "libcef/common/task_runner_impl.h"
-#include "libcef/common/tracker.h"
-#include "libcef/renderer/blink_glue.h"
-#include "libcef/renderer/browser_impl.h"
-#include "libcef/renderer/render_frame_util.h"
-#include "libcef/renderer/thread_util.h"
-
 #include "base/auto_reset.h"
 #include "base/functional/bind.h"
 #include "base/lazy_instance.h"
 #include "base/strings/string_number_conversions.h"
+#include "cef/libcef/common/app_manager.h"
+#include "cef/libcef/common/cef_switches.h"
+#include "cef/libcef/common/task_runner_impl.h"
+#include "cef/libcef/common/tracker.h"
+#include "cef/libcef/renderer/blink_glue.h"
+#include "cef/libcef/renderer/browser_impl.h"
+#include "cef/libcef/renderer/render_frame_util.h"
+#include "cef/libcef/renderer/thread_util.h"
+#include "cef/libcef/renderer/v8_impl.h"
 #include "third_party/abseil-cpp/absl/base/attributes.h"
 #include "third_party/blink/public/web/blink.h"
 #include "third_party/blink/public/web/web_frame.h"
@@ -49,6 +48,8 @@
 namespace {
 
 static const char kCefTrackObject[] = "Cef::TrackObject";
+constexpr int32_t kMaxInt32 = std::numeric_limits<int32_t>::max();
+constexpr uint32_t kMaxInt32AsUint32 = static_cast<uint32_t>(kMaxInt32);
 
 void MessageListenerCallbackImpl(v8::Handle<v8::Message> message,
                                  v8::Handle<v8::Value> data);
@@ -578,6 +579,11 @@ void AccessorNameGetterCallbackImpl(
   return info.GetReturnValue().SetUndefined();
 }
 
+// See explanation in https://crbug.com/336325111.
+void EmptySetterCallbackImpl(v8::Local<v8::Name> property,
+                             v8::Local<v8::Value> value,
+                             const v8::PropertyCallbackInfo<void>& info) {}
+
 void AccessorNameSetterCallbackImpl(
     v8::Local<v8::Name> property,
     v8::Local<v8::Value> value,
@@ -624,7 +630,7 @@ int PropertyToIndex(v8::Isolate* isolate, uint32_t index) {
 // T == v8::Local<v8::Name> for named property handlers and
 // T == uint32_t for indexed property handlers
 template <typename T>
-void InterceptorGetterCallbackImpl(
+v8::Intercepted InterceptorGetterCallbackImpl(
     T property,
     const v8::PropertyCallbackInfo<v8::Value>& info) {
   v8::Isolate* isolate = info.GetIsolate();
@@ -638,7 +644,7 @@ void InterceptorGetterCallbackImpl(
     interceptorPtr = tracker->GetInterceptor();
   }
   if (!interceptorPtr.get()) {
-    return;
+    return v8::Intercepted::kNo;
   }
 
   CefRefPtr<CefV8Value> object = new CefV8ValueImpl(isolate, context, obj);
@@ -653,15 +659,18 @@ void InterceptorGetterCallbackImpl(
     CefV8ValueImpl* retval_impl = static_cast<CefV8ValueImpl*>(retval.get());
     if (retval_impl && retval_impl->IsValid()) {
       info.GetReturnValue().Set(retval_impl->GetV8Value(true));
+      return v8::Intercepted::kYes;
     }
   }
+
+  return v8::Intercepted::kNo;
 }
 
 template <typename T>
-void InterceptorSetterCallbackImpl(
+v8::Intercepted InterceptorSetterCallbackImpl(
     T property,
     v8::Local<v8::Value> value,
-    const v8::PropertyCallbackInfo<v8::Value>& info) {
+    const v8::PropertyCallbackInfo<void>& info) {
   v8::Isolate* isolate = info.GetIsolate();
   v8::Local<v8::Context> context = isolate->GetCurrentContext();
   v8::Handle<v8::Object> obj = info.This();
@@ -673,7 +682,7 @@ void InterceptorSetterCallbackImpl(
   }
 
   if (!interceptorPtr.get()) {
-    return;
+    return v8::Intercepted::kNo;
   }
   CefRefPtr<CefV8Value> object = new CefV8ValueImpl(isolate, context, obj);
   CefRefPtr<CefV8Value> cefValue = new CefV8ValueImpl(isolate, context, value);
@@ -684,6 +693,10 @@ void InterceptorSetterCallbackImpl(
     isolate->ThrowException(
         v8::Exception::Error(GetV8String(isolate, exception)));
   }
+  // Proceed with execution of the Accessor, if any.
+  // TODO(cef): Allow the CefV8Interceptor::Set callback to stop propegation by
+  // returning a bool value.
+  return v8::Intercepted::kNo;
 }
 
 // V8 extension registration.
@@ -1336,8 +1349,11 @@ CefRefPtr<CefV8Value> CefV8Value::CreateObject(
         nullptr, v8::Local<v8::Value>(),
         v8::PropertyHandlerFlags::kOnlyInterceptStrings));
 
-    tmpl->SetIndexedPropertyHandler(InterceptorGetterCallbackImpl<uint32_t>,
-                                    InterceptorSetterCallbackImpl<uint32_t>);
+    // TODO(cef): Implement additional Query and Enumerator callbacks.
+    // See https://crbug.com/328490288#comment6.
+    tmpl->SetHandler(v8::IndexedPropertyHandlerConfiguration(
+        InterceptorGetterCallbackImpl<uint32_t>,
+        InterceptorSetterCallbackImpl<uint32_t>));
 
     v8::MaybeLocal<v8::Object> maybe_object = tmpl->NewInstance(context);
     if (!maybe_object.ToLocal<v8::Object>(&obj)) {
@@ -1693,12 +1709,13 @@ bool CefV8ValueImpl::IsBool() {
 
 bool CefV8ValueImpl::IsInt() {
   CEF_V8_REQUIRE_ISOLATE_RETURN(false);
-  return (type_ == TYPE_INT || type_ == TYPE_UINT);
+  return type_ == TYPE_INT ||
+         (type_ == TYPE_UINT && uint_value_ <= kMaxInt32AsUint32);
 }
 
 bool CefV8ValueImpl::IsUInt() {
   CEF_V8_REQUIRE_ISOLATE_RETURN(false);
-  return (type_ == TYPE_INT || type_ == TYPE_UINT);
+  return type_ == TYPE_UINT || (type_ == TYPE_INT && int_value_ >= 0);
 }
 
 bool CefV8ValueImpl::IsDouble() {
@@ -1807,16 +1824,22 @@ bool CefV8ValueImpl::GetBoolValue() {
 
 int32_t CefV8ValueImpl::GetIntValue() {
   CEF_V8_REQUIRE_ISOLATE_RETURN(0);
-  if (type_ == TYPE_INT || type_ == TYPE_UINT) {
+  if (type_ == TYPE_INT) {
     return int_value_;
+  }
+  if (type_ == TYPE_UINT && uint_value_ <= kMaxInt32AsUint32) {
+    return static_cast<int32_t>(uint_value_);
   }
   return 0;
 }
 
 uint32_t CefV8ValueImpl::GetUIntValue() {
   CEF_V8_REQUIRE_ISOLATE_RETURN(0);
-  if (type_ == TYPE_INT || type_ == TYPE_UINT) {
+  if (type_ == TYPE_UINT) {
     return uint_value_;
+  }
+  if (type_ == TYPE_INT && int_value_ >= 0) {
+    return static_cast<uint32_t>(int_value_);
   }
   return 0;
 }
@@ -2116,7 +2139,6 @@ bool CefV8ValueImpl::SetValue(int index, CefRefPtr<CefV8Value> value) {
 }
 
 bool CefV8ValueImpl::SetValue(const CefString& key,
-                              AccessControl settings,
                               PropertyAttribute attribute) {
   CEF_V8_REQUIRE_OBJECT_RETURN(false);
 
@@ -2147,15 +2169,14 @@ bool CefV8ValueImpl::SetValue(const CefString& key,
   v8::AccessorNameGetterCallback getter = AccessorNameGetterCallbackImpl;
   v8::AccessorNameSetterCallback setter =
       (attribute & V8_PROPERTY_ATTRIBUTE_READONLY)
-          ? nullptr
+          ? EmptySetterCallbackImpl
           : AccessorNameSetterCallbackImpl;
 
   v8::TryCatch try_catch(isolate);
   try_catch.SetVerbose(true);
-  v8::Maybe<bool> set =
-      obj->SetAccessor(context, GetV8String(isolate, key), getter, setter, obj,
-                       static_cast<v8::AccessControl>(settings),
-                       static_cast<v8::PropertyAttribute>(attribute));
+  v8::Maybe<bool> set = obj->SetNativeDataProperty(
+      context, GetV8String(isolate, key), getter, setter, obj,
+      static_cast<v8::PropertyAttribute>(attribute));
   return (!HasCaught(context, try_catch) && set.FromJust());
 }
 
@@ -2354,7 +2375,7 @@ bool CefV8ValueImpl::NeuterArrayBuffer() {
   if (!arr->IsDetachable()) {
     return false;
   }
-  arr->Detach();
+  [[maybe_unused]] auto result = arr->Detach(v8::Local<v8::Value>());
 
   return true;
 }

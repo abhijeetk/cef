@@ -3,7 +3,6 @@
 // can be found in the LICENSE file.
 
 #include "tests/cefclient/browser/client_browser.h"
-#include "tests/cefclient/browser/main_context.h"
 
 #include "include/base/cef_logging.h"
 #include "include/cef_command_line.h"
@@ -69,7 +68,6 @@ class ClientBrowserDelegate : public ClientAppBrowser::Delegate {
       const CefString& current_directory) override {
     // Add logging for some common switches that the user may attempt to use.
     static const char* kIgnoredSwitches[] = {
-        switches::kEnableChromeRuntime,
         switches::kMultiThreadedMessageLoop,
         switches::kOffScreenRenderingEnabled,
         switches::kUseViews,
@@ -93,8 +91,8 @@ class ClientBrowserDelegate : public ClientAppBrowser::Delegate {
 
   CefRefPtr<CefClient> GetDefaultClient(
       CefRefPtr<ClientAppBrowser> app) override {
-    // Default client handler for unmanaged browser windows. Used with the
-    // Chrome runtime only.
+    // Default client handler for unmanaged browser windows. Used with
+    // Chrome style only.
     LOG(INFO) << "Creating a chrome browser with the default client";
     return new DefaultClientHandler();
   }

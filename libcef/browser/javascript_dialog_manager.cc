@@ -3,18 +3,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "libcef/browser/javascript_dialog_manager.h"
+#include "cef/libcef/browser/javascript_dialog_manager.h"
 
 #include <utility>
-
-#include "libcef/browser/browser_host_base.h"
-#include "libcef/browser/extensions/browser_extensions_util.h"
-#include "libcef/browser/thread_util.h"
-#include "libcef/common/extensions/extensions_util.h"
 
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
+#include "cef/libcef/browser/browser_guest_util.h"
+#include "cef/libcef/browser/browser_host_base.h"
+#include "cef/libcef/browser/thread_util.h"
 #include "components/javascript_dialogs/tab_modal_dialog_manager.h"
 
 namespace {
@@ -70,14 +68,12 @@ javascript_dialogs::TabModalDialogManager* GetTabModalDialogManager(
     return manager;
   }
 
-  // Try the owner WebContents if the dialog originates from a guest view such
-  // as the PDF viewer or Print Preview.
-  if (extensions::ExtensionsEnabled()) {
-    if (auto* owner_contents =
-            extensions::GetOwnerForGuestContents(web_contents)) {
-      return javascript_dialogs::TabModalDialogManager::FromWebContents(
-          owner_contents);
-    }
+  // Try the owner WebContents if the dialog originates from an excluded view
+  // such as the PDF viewer or Print Preview. This is safe to call even if Alloy
+  // extensions are disabled.
+  if (auto* owner_contents = GetOwnerForGuestContents(web_contents)) {
+    return javascript_dialogs::TabModalDialogManager::FromWebContents(
+        owner_contents);
   }
 
   return nullptr;
@@ -127,7 +123,7 @@ void CefJavaScriptDialogManager::RunJavaScriptDialog(
 
       // Execute the user callback.
       bool handled = handler->OnJSDialog(
-          browser_, origin_url.spec(),
+          browser_.get(), origin_url.spec(),
           static_cast<cef_jsdialog_type_t>(message_type), message_text,
           default_prompt_text, callbackPtr.get(), *did_suppress_message);
       if (handled) {
@@ -185,13 +181,6 @@ void CefJavaScriptDialogManager::RunBeforeUnloadDialog(
     content::RenderFrameHost* render_frame_host,
     bool is_reload,
     DialogClosedCallback callback) {
-  if (browser_->WillBeDestroyed()) {
-    // Currently destroying the browser. Accept the unload without showing
-    // the prompt.
-    std::move(callback).Run(true, std::u16string());
-    return;
-  }
-
   const std::u16string& message_text = u"Is it OK to leave/reload this page?";
 
   // Always call DialogClosed().
@@ -209,7 +198,7 @@ void CefJavaScriptDialogManager::RunBeforeUnloadDialog(
 
       // Execute the user callback.
       bool handled = handler->OnBeforeUnloadDialog(
-          browser_, message_text, is_reload, callbackPtr.get());
+          browser_.get(), message_text, is_reload, callbackPtr.get());
       if (handled) {
         return;
       }
@@ -284,7 +273,7 @@ void CefJavaScriptDialogManager::CancelDialogs(
     bool reset_state) {
   if (handler_) {
     if (reset_state) {
-      handler_->OnResetDialogState(browser_);
+      handler_->OnResetDialogState(browser_.get());
     }
     handler_ = nullptr;
     return;
@@ -317,7 +306,7 @@ void CefJavaScriptDialogManager::DialogClosed(
     bool success,
     const std::u16string& user_input) {
   if (handler_) {
-    handler_->OnDialogClosed(browser_);
+    handler_->OnDialogClosed(browser_.get());
     // Call OnResetDialogState.
     CancelDialogs(/*web_contents=*/nullptr, /*reset_state=*/true);
   }

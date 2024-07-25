@@ -6,9 +6,9 @@
 #define CEF_LIBCEF_COMMON_TRACKER_H_
 #pragma once
 
-#include "include/cef_base.h"
-
+#include "base/memory/raw_ptr.h"
 #include "base/synchronization/lock.h"
+#include "cef/include/cef_base.h"
 
 // Class extended by objects that must be tracked.  After creating a tracked
 // object you should add it to the appropriate track manager.
@@ -36,8 +36,8 @@ class CefTrackNode {
   void RemoveTracking();
 
  private:
-  CefTrackNode* track_next_ = nullptr;
-  CefTrackNode* track_prev_ = nullptr;
+  raw_ptr<CefTrackNode> track_next_ = nullptr;
+  raw_ptr<CefTrackNode> track_prev_ = nullptr;
 
   friend class CefTrackManager;
 };

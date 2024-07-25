@@ -2,19 +2,18 @@
 // reserved. Use of this source code is governed by a BSD-style license that
 // can be found in the LICENSE file.
 
-#include "libcef/browser/origin_whitelist_impl.h"
+#include "cef/libcef/browser/origin_whitelist_impl.h"
 
 #include <string>
 #include <vector>
 
-#include "include/cef_origin_whitelist.h"
-#include "libcef/browser/browser_manager.h"
-#include "libcef/browser/context.h"
-#include "libcef/browser/thread_util.h"
-
 #include "base/functional/bind.h"
 #include "base/lazy_instance.h"
 #include "base/synchronization/lock.h"
+#include "cef/include/cef_origin_whitelist.h"
+#include "cef/libcef/browser/browser_manager.h"
+#include "cef/libcef/browser/context.h"
+#include "cef/libcef/browser/thread_util.h"
 #include "cef/libcef/common/mojom/cef.mojom.h"
 #include "chrome/common/webui_url_constants.h"
 #include "content/public/browser/render_process_host.h"
@@ -107,7 +106,7 @@ class CefOriginWhitelistManager {
   }
 
   void GetCrossOriginWhitelistEntries(
-      absl::optional<CrossOriginWhiteList>* entries) const {
+      std::optional<CrossOriginWhiteList>* entries) const {
     base::AutoLock lock_scope(lock_);
 
     if (!origin_list_.empty()) {
@@ -289,7 +288,7 @@ bool CefClearCrossOriginWhitelist() {
 }
 
 void GetCrossOriginWhitelistEntries(
-    absl::optional<CrossOriginWhiteList>* entries) {
+    std::optional<CrossOriginWhiteList>* entries) {
   CefOriginWhitelistManager::GetInstance()->GetCrossOriginWhitelistEntries(
       entries);
 }

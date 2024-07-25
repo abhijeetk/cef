@@ -9,10 +9,11 @@
 // implementations. See the translator.README.txt file in the tools directory
 // for more information.
 //
-// $hash=014970f5cef04197c23c05b1c6c73cdf1ed85bce$
+// $hash=8bbe8af593158eac1cbbdaa09313216872488f86$
 //
 
 #include "libcef_dll/ctocpp/views/view_ctocpp.h"
+
 #include "libcef_dll/cpptoc/views/view_delegate_cpptoc.h"
 #include "libcef_dll/ctocpp/views/browser_view_ctocpp.h"
 #include "libcef_dll/ctocpp/views/button_ctocpp.h"
@@ -748,6 +749,24 @@ NO_SANITIZE("cfi-icall") cef_color_t CefViewCToCpp::GetBackgroundColor() {
 
   // Execute
   cef_color_t _retval = _struct->get_background_color(_struct);
+
+  // Return type: simple
+  return _retval;
+}
+
+NO_SANITIZE("cfi-icall")
+cef_color_t CefViewCToCpp::GetThemeColor(int color_id) {
+  shutdown_checker::AssertNotShutdown();
+
+  cef_view_t* _struct = GetStruct();
+  if (CEF_MEMBER_MISSING(_struct, get_theme_color)) {
+    return 0;
+  }
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Execute
+  cef_color_t _retval = _struct->get_theme_color(_struct, color_id);
 
   // Return type: simple
   return _retval;

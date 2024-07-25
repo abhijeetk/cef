@@ -9,10 +9,11 @@
 // implementations. See the translator.README.txt file in the tools directory
 // for more information.
 //
-// $hash=1f438b082c8c499084a3e494e1bb83adaecf91d1$
+// $hash=bcb4d6aea88f1445def6014708b69087f1a6dc74$
 //
 
 #include "libcef_dll/cpptoc/views/window_delegate_cpptoc.h"
+
 #include "libcef_dll/ctocpp/views/view_ctocpp.h"
 #include "libcef_dll/ctocpp/views/window_ctocpp.h"
 #include "libcef_dll/shutdown_checker.h"
@@ -374,6 +375,31 @@ window_delegate_get_titlebar_height(struct _cef_window_delegate_t* self,
   return _retval;
 }
 
+cef_state_t CEF_CALLBACK
+window_delegate_accepts_first_mouse(struct _cef_window_delegate_t* self,
+                                    cef_window_t* window) {
+  shutdown_checker::AssertNotShutdown();
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  DCHECK(self);
+  if (!self) {
+    return STATE_DEFAULT;
+  }
+  // Verify param: window; type: refptr_diff
+  DCHECK(window);
+  if (!window) {
+    return STATE_DEFAULT;
+  }
+
+  // Execute
+  cef_state_t _retval = CefWindowDelegateCppToC::Get(self)->AcceptsFirstMouse(
+      CefWindowCToCpp::Wrap(window));
+
+  // Return type: simple
+  return _retval;
+}
+
 int CEF_CALLBACK window_delegate_can_resize(struct _cef_window_delegate_t* self,
                                             cef_window_t* window) {
   shutdown_checker::AssertNotShutdown();
@@ -529,6 +555,48 @@ window_delegate_on_key_event(struct _cef_window_delegate_t* self,
       CefWindowCToCpp::Wrap(window), eventVal);
 
   // Return type: bool
+  return _retval;
+}
+
+void CEF_CALLBACK
+window_delegate_on_theme_colors_changed(struct _cef_window_delegate_t* self,
+                                        cef_window_t* window,
+                                        int chrome_theme) {
+  shutdown_checker::AssertNotShutdown();
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  DCHECK(self);
+  if (!self) {
+    return;
+  }
+  // Verify param: window; type: refptr_diff
+  DCHECK(window);
+  if (!window) {
+    return;
+  }
+
+  // Execute
+  CefWindowDelegateCppToC::Get(self)->OnThemeColorsChanged(
+      CefWindowCToCpp::Wrap(window), chrome_theme ? true : false);
+}
+
+cef_runtime_style_t CEF_CALLBACK
+window_delegate_get_window_runtime_style(struct _cef_window_delegate_t* self) {
+  shutdown_checker::AssertNotShutdown();
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  DCHECK(self);
+  if (!self) {
+    return CEF_RUNTIME_STYLE_DEFAULT;
+  }
+
+  // Execute
+  cef_runtime_style_t _retval =
+      CefWindowDelegateCppToC::Get(self)->GetWindowRuntimeStyle();
+
+  // Return type: simple
   return _retval;
 }
 
@@ -793,6 +861,28 @@ void CEF_CALLBACK window_delegate_on_blur(struct _cef_view_delegate_t* self,
       ->OnBlur(CefViewCToCpp::Wrap(view));
 }
 
+void CEF_CALLBACK
+window_delegate_on_theme_changed(struct _cef_view_delegate_t* self,
+                                 cef_view_t* view) {
+  shutdown_checker::AssertNotShutdown();
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  DCHECK(self);
+  if (!self) {
+    return;
+  }
+  // Verify param: view; type: refptr_diff
+  DCHECK(view);
+  if (!view) {
+    return;
+  }
+
+  // Execute
+  CefWindowDelegateCppToC::Get(reinterpret_cast<cef_window_delegate_t*>(self))
+      ->OnThemeChanged(CefViewCToCpp::Wrap(view));
+}
+
 }  // namespace
 
 // CONSTRUCTOR - Do not edit by hand.
@@ -815,12 +905,17 @@ CefWindowDelegateCppToC::CefWindowDelegateCppToC() {
   GetStruct()->with_standard_window_buttons =
       window_delegate_with_standard_window_buttons;
   GetStruct()->get_titlebar_height = window_delegate_get_titlebar_height;
+  GetStruct()->accepts_first_mouse = window_delegate_accepts_first_mouse;
   GetStruct()->can_resize = window_delegate_can_resize;
   GetStruct()->can_maximize = window_delegate_can_maximize;
   GetStruct()->can_minimize = window_delegate_can_minimize;
   GetStruct()->can_close = window_delegate_can_close;
   GetStruct()->on_accelerator = window_delegate_on_accelerator;
   GetStruct()->on_key_event = window_delegate_on_key_event;
+  GetStruct()->on_theme_colors_changed =
+      window_delegate_on_theme_colors_changed;
+  GetStruct()->get_window_runtime_style =
+      window_delegate_get_window_runtime_style;
   GetStruct()->base.base.get_preferred_size =
       window_delegate_get_preferred_size;
   GetStruct()->base.base.get_minimum_size = window_delegate_get_minimum_size;
@@ -835,6 +930,7 @@ CefWindowDelegateCppToC::CefWindowDelegateCppToC() {
   GetStruct()->base.base.on_layout_changed = window_delegate_on_layout_changed;
   GetStruct()->base.base.on_focus = window_delegate_on_focus;
   GetStruct()->base.base.on_blur = window_delegate_on_blur;
+  GetStruct()->base.base.on_theme_changed = window_delegate_on_theme_changed;
 }
 
 // DESTRUCTOR - Do not edit by hand.

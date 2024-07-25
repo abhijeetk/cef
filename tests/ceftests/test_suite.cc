@@ -144,10 +144,6 @@ int CefTestSuite::Run() {
 }
 
 void CefTestSuite::GetSettings(CefSettings& settings) const {
-  // Enable the experimental Chrome runtime. See issue #2969 for details.
-  settings.chrome_runtime =
-      command_line_->HasSwitch(client::switches::kEnableChromeRuntime);
-
   CefString(&settings.cache_path) = root_cache_path_;
   CefString(&settings.root_cache_path) = root_cache_path_;
 

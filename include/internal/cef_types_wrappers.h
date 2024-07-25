@@ -387,7 +387,6 @@ struct CefSettingsTraits {
                    &target->framework_dir_path, copy);
     cef_string_set(src->main_bundle_path.str, src->main_bundle_path.length,
                    &target->main_bundle_path, copy);
-    target->chrome_runtime = src->chrome_runtime;
     target->multi_threaded_message_loop = src->multi_threaded_message_loop;
     target->external_message_pump = src->external_message_pump;
     target->windowless_rendering_enabled = src->windowless_rendering_enabled;
@@ -398,7 +397,6 @@ struct CefSettingsTraits {
     cef_string_set(src->root_cache_path.str, src->root_cache_path.length,
                    &target->root_cache_path, copy);
     target->persist_session_cookies = src->persist_session_cookies;
-    target->persist_user_preferences = src->persist_user_preferences;
 
     cef_string_set(src->user_agent.str, src->user_agent.length,
                    &target->user_agent, copy);
@@ -417,7 +415,6 @@ struct CefSettingsTraits {
                    &target->resources_dir_path, copy);
     cef_string_set(src->locales_dir_path.str, src->locales_dir_path.length,
                    &target->locales_dir_path, copy);
-    target->pack_loading_disabled = src->pack_loading_disabled;
     target->remote_debugging_port = src->remote_debugging_port;
     target->uncaught_exception_stack_size = src->uncaught_exception_stack_size;
     target->background_color = src->background_color;
@@ -460,7 +457,6 @@ struct CefRequestContextSettingsTraits {
     cef_string_set(src->cache_path.str, src->cache_path.length,
                    &target->cache_path, copy);
     target->persist_session_cookies = src->persist_session_cookies;
-    target->persist_user_preferences = src->persist_user_preferences;
     cef_string_set(src->accept_language_list.str,
                    src->accept_language_list.length,
                    &target->accept_language_list, copy);
@@ -697,7 +693,9 @@ using CefPdfPrintSettings = CefStructBase<CefPdfPrintSettingsTraits>;
 ///
 class CefBoxLayoutSettings : public cef_box_layout_settings_t {
  public:
-  CefBoxLayoutSettings() : cef_box_layout_settings_t{} {}
+  CefBoxLayoutSettings() : cef_box_layout_settings_t{} {
+    cross_axis_alignment = CEF_AXIS_ALIGNMENT_STRETCH;
+  }
   CefBoxLayoutSettings(const cef_box_layout_settings_t& r)
       : cef_box_layout_settings_t(r) {}
 };
@@ -747,5 +745,42 @@ struct CefMediaSinkDeviceInfoTraits {
 /// Class representing MediaSink device info.
 ///
 using CefMediaSinkDeviceInfo = CefStructBase<CefMediaSinkDeviceInfoTraits>;
+
+///
+/// Class representing accelerated paint info.
+///
+class CefAcceleratedPaintInfo : public cef_accelerated_paint_info_t {
+ public:
+  CefAcceleratedPaintInfo() : cef_accelerated_paint_info_t{} {}
+  CefAcceleratedPaintInfo(const cef_accelerated_paint_info_t& r)
+      : cef_accelerated_paint_info_t(r) {}
+};
+
+struct CefTaskInfoTraits {
+  using struct_type = cef_task_info_t;
+
+  static inline void init(struct_type* s) {}
+
+  static inline void clear(struct_type* s) { cef_string_clear(&s->title); }
+
+  static inline void set(const struct_type* src,
+                         struct_type* target,
+                         bool copy) {
+    target->id = src->id;
+    target->type = src->type;
+    target->is_killable = src->is_killable;
+    cef_string_set(src->title.str, src->title.length, &target->title, copy);
+    target->cpu_usage = src->cpu_usage;
+    target->number_of_processors = src->number_of_processors;
+    target->memory = src->memory;
+    target->gpu_memory = src->gpu_memory;
+    target->is_gpu_memory_inflated = src->is_gpu_memory_inflated;
+  }
+};
+
+///
+/// Class representing task information.
+///
+using CefTaskInfo = CefStructBase<CefTaskInfoTraits>;
 
 #endif  // CEF_INCLUDE_INTERNAL_CEF_TYPES_WRAPPERS_H_

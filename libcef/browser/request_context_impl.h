@@ -6,11 +6,12 @@
 #define CEF_LIBCEF_BROWSER_REQUEST_CONTEXT_IMPL_H_
 #pragma once
 
-#include "include/cef_request_context.h"
-#include "libcef/browser/browser_context.h"
-#include "libcef/browser/media_router/media_router_impl.h"
-#include "libcef/browser/net_service/cookie_manager_impl.h"
-#include "libcef/browser/thread_util.h"
+#include "base/memory/raw_ptr.h"
+#include "cef/include/cef_request_context.h"
+#include "cef/libcef/browser/browser_context.h"
+#include "cef/libcef/browser/media_router/media_router_impl.h"
+#include "cef/libcef/browser/net_service/cookie_manager_impl.h"
+#include "cef/libcef/browser/thread_util.h"
 
 namespace content {
 struct GlobalRenderFrameHostId;
@@ -106,13 +107,6 @@ class CefRequestContextImpl : public CefRequestContext {
   void CloseAllConnections(CefRefPtr<CefCompletionCallback> callback) override;
   void ResolveHost(const CefString& origin,
                    CefRefPtr<CefResolveCallback> callback) override;
-  void LoadExtension(const CefString& root_directory,
-                     CefRefPtr<CefDictionaryValue> manifest,
-                     CefRefPtr<CefExtensionHandler> handler) override;
-  bool DidLoadExtension(const CefString& extension_id) override;
-  bool HasExtension(const CefString& extension_id) override;
-  bool GetExtensions(std::vector<CefString>& extension_ids) override;
-  CefRefPtr<CefExtension> GetExtension(const CefString& extension_id) override;
   CefRefPtr<CefMediaRouter> GetMediaRouter(
       CefRefPtr<CefCompletionCallback> callback) override;
   CefRefPtr<CefValue> GetWebsiteSetting(
@@ -131,22 +125,23 @@ class CefRequestContextImpl : public CefRequestContext {
                          const CefString& top_level_url,
                          cef_content_setting_types_t content_type,
                          cef_content_setting_values_t value) override;
+  void SetChromeColorScheme(cef_color_variant_t variant,
+                            cef_color_t user_color) override;
+  cef_color_variant_t GetChromeColorSchemeMode() override;
+  cef_color_t GetChromeColorSchemeColor() override;
+  cef_color_variant_t GetChromeColorSchemeVariant() override;
 
   const CefRequestContextSettings& settings() const { return config_.settings; }
 
-  // Called from CefBrowserContentsDelegate::RenderFrameCreated or
-  // CefMimeHandlerViewGuestDelegate::OnGuestAttached when a render frame is
-  // created.
+  // Called from CefBrowserContentsDelegate::RenderFrameCreated when a render
+  // frame is created.
   void OnRenderFrameCreated(const content::GlobalRenderFrameHostId& global_id,
-                            bool is_main_frame,
-                            bool is_guest_view);
+                            bool is_main_frame);
 
-  // Called from CefBrowserContentsDelegate::RenderFrameDeleted or
-  // CefMimeHandlerViewGuestDelegate::OnGuestDetached when a render frame is
-  // deleted.
+  // Called from CefBrowserContentsDelegate::RenderFrameDeleted when a render
+  // frame is deleted.
   void OnRenderFrameDeleted(const content::GlobalRenderFrameHostId& global_id,
-                            bool is_main_frame,
-                            bool is_guest_view);
+                            bool is_main_frame);
 
  private:
   friend class CefRequestContext;
@@ -157,7 +152,7 @@ class CefRequestContextImpl : public CefRequestContext {
 
     // Wrap an existing (non-global) browser context. When specifying this value
     // GetOrCreateRequestContext() must be called on the UI thread.
-    CefBrowserContext* browser_context = nullptr;
+    raw_ptr<CefBrowserContext> browser_context = nullptr;
 
     // |settings| or |other| will be set when creating a new CefRequestContext
     // via the API.
@@ -205,6 +200,10 @@ class CefRequestContextImpl : public CefRequestContext {
       cef_content_setting_types_t content_type,
       cef_content_setting_values_t value,
       CefBrowserContext::Getter browser_context_getter);
+  void SetChromeColorSchemeInternal(
+      cef_color_variant_t variant,
+      cef_color_t user_color,
+      CefBrowserContext::Getter browser_context_getter);
 
   void InitializeCookieManagerInternal(
       CefRefPtr<CefCookieManagerImpl> cookie_manager,
@@ -215,7 +214,7 @@ class CefRequestContextImpl : public CefRequestContext {
   CefBrowserContext* browser_context() const;
 
   // We must disassociate from this on destruction.
-  CefBrowserContext* browser_context_ = nullptr;
+  raw_ptr<CefBrowserContext> browser_context_ = nullptr;
 
   Config config_;
 

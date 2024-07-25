@@ -9,7 +9,7 @@
 // implementations. See the translator.README.txt file in the tools directory
 // for more information.
 //
-// $hash=8b1e4268c2b68437b5022e9baf3f1c56bf036fe7$
+// $hash=9f40e4ce3e46a895b5bf644bebdc2d802c9b598b$
 //
 
 #ifndef CEF_LIBCEF_DLL_CTOCPP_BROWSER_HOST_CTOCPP_H_
@@ -21,6 +21,7 @@
 #endif
 
 #include <vector>
+
 #include "include/capi/cef_browser_capi.h"
 #include "include/capi/cef_client_capi.h"
 #include "include/cef_browser.h"
@@ -130,8 +131,6 @@ class CefBrowserHostCToCpp : public CefCToCppRefCounted<CefBrowserHostCToCpp,
   void SetAutoResizeEnabled(bool enabled,
                             const CefSize& min_size,
                             const CefSize& max_size) override;
-  CefRefPtr<CefExtension> GetExtension() override;
-  bool IsBackgroundHost() override;
   void SetAudioMuted(bool mute) override;
   bool IsAudioMuted() override;
   bool IsFullscreen() override;
@@ -139,6 +138,8 @@ class CefBrowserHostCToCpp : public CefCToCppRefCounted<CefBrowserHostCToCpp,
   bool CanExecuteChromeCommand(int command_id) override;
   void ExecuteChromeCommand(int command_id,
                             cef_window_open_disposition_t disposition) override;
+  bool IsRenderProcessUnresponsive() override;
+  cef_runtime_style_t GetRuntimeStyle() override;
 };
 
 #endif  // CEF_LIBCEF_DLL_CTOCPP_BROWSER_HOST_CTOCPP_H_

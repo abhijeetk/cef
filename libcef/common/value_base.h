@@ -8,14 +8,15 @@
 
 #include <map>
 #include <set>
-#include "include/cef_base.h"
 
 #include "base/logging.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/notreached.h"
 #include "base/synchronization/lock.h"
 #include "base/thread_annotations.h"
 #include "base/threading/platform_thread.h"
+#include "cef/include/cef_base.h"
 
 // Controller implementation base class.
 class CefValueController
@@ -128,16 +129,16 @@ class CefValueController
 
  private:
   // Owner object.
-  void* owner_value_ = nullptr;
-  Object* owner_object_ = nullptr;
+  raw_ptr<void> owner_value_ = nullptr;
+  raw_ptr<Object> owner_object_ = nullptr;
 
   // Map of reference objects.
-  using ReferenceMap = std::map<void*, Object*>;
+  using ReferenceMap = std::map<raw_ptr<void>, raw_ptr<Object>>;
   ReferenceMap reference_map_;
 
   // Map of dependency objects.
-  using DependencySet = std::set<void*>;
-  using DependencyMap = std::map<void*, DependencySet>;
+  using DependencySet = std::set<raw_ptr<void>>;
+  using DependencyMap = std::map<raw_ptr<void>, DependencySet>;
   DependencyMap dependency_map_;
 };
 
@@ -322,7 +323,7 @@ class CefValueBase : public CefType, public CefValueController::Object {
       controller()->RemoveDependencies(value_);
 
       // Delete the value.
-      DeleteValue(value_);
+      value_.ClearAndDelete();
     }
 
     controller_ = nullptr;
@@ -373,9 +374,6 @@ class CefValueBase : public CefType, public CefValueController::Object {
     controller_ = nullptr;
     value_ = nullptr;
   }
-
-  // Override to customize value deletion.
-  virtual void DeleteValue(ValueType* value) { delete value; }
 
   // Returns a mutable reference to the value.
   inline ValueType* mutable_value() const {
@@ -438,7 +436,7 @@ class CefValueBase : public CefType, public CefValueController::Object {
   };
 
  private:
-  ValueType* value_;
+  raw_ptr<ValueType> value_;
   ValueMode value_mode_;
   bool read_only_;
   scoped_refptr<CefValueController> controller_;

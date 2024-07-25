@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be found
 // in the LICENSE file.
 
-#include "libcef/browser/osr/osr_accessibility_util.h"
+#include "cef/libcef/browser/osr/osr_accessibility_util.h"
 
 #include <algorithm>
 #include <string>
@@ -12,11 +12,11 @@
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
-#include "content/public/browser/ax_event_notification_details.h"
 #include "ui/accessibility/ax_enum_util.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_text_utils.h"
 #include "ui/accessibility/ax_tree_update.h"
+#include "ui/accessibility/ax_updates_and_events.h"
 #include "ui/gfx/geometry/transform.h"
 
 namespace {
@@ -181,6 +181,20 @@ struct PopulateAxNodeAttributes {
       case ax::mojom::IntAttribute::kAriaCurrentState: {
         auto state = static_cast<ax::mojom::AriaCurrentState>(attr.second);
         if (ax::mojom::AriaCurrentState::kNone != state) {
+          attributes->SetString(ToString(attr.first), ToString(state));
+        }
+      } break;
+      case ax::mojom::IntAttribute::kAriaNotificationInterruptDeprecated: {
+        auto state =
+            static_cast<ax::mojom::AriaNotificationInterrupt>(attr.second);
+        if (ax::mojom::AriaNotificationInterrupt::kNone != state) {
+          attributes->SetString(ToString(attr.first), ToString(state));
+        }
+      } break;
+      case ax::mojom::IntAttribute::kAriaNotificationPriorityDeprecated: {
+        auto state =
+            static_cast<ax::mojom::AriaNotificationPriority>(attr.second);
+        if (ax::mojom::AriaNotificationPriority::kNone != state) {
           attributes->SetString(ToString(attr.first), ToString(state));
         }
       } break;
@@ -460,7 +474,7 @@ CefRefPtr<CefDictionaryValue> ToCefValue(const ui::AXEvent& event) {
 
 // Convert AXEventNotificationDetails to CefDictionaryValue.
 CefRefPtr<CefDictionaryValue> ToCefValue(
-    const content::AXEventNotificationDetails& eventData) {
+    const ui::AXUpdatesAndEvents& eventData) {
   CefRefPtr<CefDictionaryValue> value = CefDictionaryValue::Create();
 
   if (!eventData.ax_tree_id.ToString().empty()) {
@@ -511,8 +525,7 @@ CefRefPtr<CefDictionaryValue> ToCefValue(const ui::AXRelativeBounds& location) {
 }
 
 // Convert AXLocationChangeNotificationDetails to CefDictionaryValue.
-CefRefPtr<CefDictionaryValue> ToCefValue(
-    const content::AXLocationChangeNotificationDetails& locData) {
+CefRefPtr<CefDictionaryValue> ToCefValue(const ui::AXLocationChanges& locData) {
   CefRefPtr<CefDictionaryValue> value = CefDictionaryValue::Create();
 
   if (locData.id != -1) {
@@ -544,16 +557,16 @@ CefRefPtr<CefListValue> ToCefValue(const std::vector<T>& vecData) {
 namespace osr_accessibility_util {
 
 CefRefPtr<CefValue> ParseAccessibilityEventData(
-    const content::AXEventNotificationDetails& data) {
+    const ui::AXUpdatesAndEvents& details) {
   CefRefPtr<CefValue> value = CefValue::Create();
-  value->SetDictionary(ToCefValue(data));
+  value->SetDictionary(ToCefValue(details));
   return value;
 }
 
 CefRefPtr<CefValue> ParseAccessibilityLocationData(
-    const std::vector<content::AXLocationChangeNotificationDetails>& data) {
+    const std::vector<ui::AXLocationChanges>& details) {
   CefRefPtr<CefValue> value = CefValue::Create();
-  value->SetList(ToCefValue(data));
+  value->SetList(ToCefValue(details));
   return value;
 }
 

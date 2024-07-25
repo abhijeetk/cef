@@ -5,9 +5,8 @@
 #ifndef CEF_LIBCEF_BROWSER_NET_SERVICE_COOKIE_HELPER_H_
 #define CEF_LIBCEF_BROWSER_NET_SERVICE_COOKIE_HELPER_H_
 
-#include "libcef/browser/browser_context.h"
-
 #include "base/functional/callback_forward.h"
+#include "cef/libcef/browser/browser_context.h"
 #include "net/cookies/canonical_cookie.h"
 
 namespace net {
@@ -25,7 +24,7 @@ namespace net_service::cookie_helper {
 // cookieable, which may intentionally exclude standard schemes.
 bool IsCookieableScheme(
     const GURL& url,
-    const absl::optional<std::vector<std::string>>& cookieable_schemes);
+    const std::optional<std::vector<std::string>>& cookieable_schemes);
 
 using AllowCookieCallback =
     base::RepeatingCallback<void(const net::CanonicalCookie&,

@@ -58,14 +58,6 @@ int main(int argc, char* argv[]) {
   // Specify CEF global settings here.
   CefSettings settings;
 
-  // Use the CEF Chrome runtime if "--enable-chrome-runtime" is specified via
-  // the command-line. Otherwise, use the CEF Alloy runtime. For more
-  // information about CEF runtimes see
-  // https://bitbucket.org/chromiumembedded/cef/wiki/Architecture.md#markdown-header-cef3
-  if (command_line->HasSwitch("enable-chrome-runtime")) {
-    settings.chrome_runtime = true;
-  }
-
 // When generating projects with CMake the CEF_USE_SANDBOX value will be defined
 // automatically. Pass -DUSE_SANDBOX=OFF to the CMake command-line to disable
 // use of the sandbox.
@@ -82,7 +74,7 @@ int main(int argc, char* argv[]) {
   // fails or if early exit is desired (for example, due to process singleton
   // relaunch behavior).
   if (!CefInitialize(main_args, settings, app.get(), nullptr)) {
-    return 1;
+    return CefGetExitCode();
   }
 
   // Run the CEF message loop. This will block until CefQuitMessageLoop() is

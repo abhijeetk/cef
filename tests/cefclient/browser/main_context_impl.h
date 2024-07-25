@@ -29,10 +29,8 @@ class MainContextImpl : public MainContext {
   std::string GetAppWorkingDirectory() override;
   std::string GetMainURL(CefRefPtr<CefCommandLine> command_line) override;
   cef_color_t GetBackgroundColor() override;
-  bool UseChromeRuntime() override;
-  bool UseChromeRuntimeNative() override;
-  bool UseViews() override;
-  bool UseWindowlessRendering() override;
+  bool UseViewsGlobal() override;
+  bool UseAlloyStyleGlobal() override;
   bool TouchEventsEnabled() override;
   bool UseDefaultPopup() override;
   void PopulateSettings(CefSettings* settings) override;
@@ -74,15 +72,12 @@ class MainContextImpl : public MainContext {
   cef_color_t browser_background_color_ = 0;
   bool use_windowless_rendering_;
   int windowless_frame_rate_ = 0;
-  bool use_chrome_runtime_;
-  bool use_chrome_runtime_native_ = false;
   bool use_views_;
+  bool use_alloy_style_;
 
   std::unique_ptr<RootWindowManager> root_window_manager_;
 
-#if defined(OS_WIN)
   bool shared_texture_enabled_;
-#endif
 
   bool external_begin_frame_enabled_;
 

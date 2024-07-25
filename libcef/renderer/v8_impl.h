@@ -8,13 +8,12 @@
 
 #include <vector>
 
-#include "include/cef_v8.h"
-#include "libcef/common/tracker.h"
-
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/task/single_thread_task_runner.h"
+#include "cef/include/cef_v8.h"
+#include "cef/libcef/common/tracker.h"
 #include "v8/include/v8.h"
 
 class CefTrackNode;
@@ -262,9 +261,7 @@ class CefV8ValueImpl : public CefV8Value {
                 CefRefPtr<CefV8Value> value,
                 PropertyAttribute attribute) override;
   bool SetValue(int index, CefRefPtr<CefV8Value> value) override;
-  bool SetValue(const CefString& key,
-                AccessControl settings,
-                PropertyAttribute attribute) override;
+  bool SetValue(const CefString& key, PropertyAttribute attribute) override;
   bool GetKeys(std::vector<CefString>& keys) override;
   bool SetUserData(CefRefPtr<CefBaseRefCounted> user_data) override;
   CefRefPtr<CefBaseRefCounted> GetUserData() override;

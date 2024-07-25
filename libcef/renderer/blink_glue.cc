@@ -3,7 +3,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "libcef/renderer/blink_glue.h"
+#include "cef/libcef/renderer/blink_glue.h"
 
 #include "third_party/blink/public/mojom/v8_cache_options.mojom-blink.h"
 #include "third_party/blink/public/platform/web_string.h"
@@ -13,7 +13,6 @@
 #include "third_party/blink/public/web/web_local_frame_client.h"
 #include "third_party/blink/public/web/web_node.h"
 #include "third_party/blink/public/web/web_view_client.h"
-
 #include "third_party/blink/renderer/bindings/core/v8/sanitize_script_errors.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_evaluation_result.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
@@ -81,7 +80,7 @@ void GoBack(blink::WebView* view) {
       blink::Frame* core_frame = blink::WebFrame::ToCoreFrame(*main_frame);
       blink::To<blink::LocalFrame>(core_frame)
           ->GetLocalFrameHostRemote()
-          .GoToEntryAtOffset(-1, /*has_user_gesture=*/true, absl::nullopt);
+          .GoToEntryAtOffset(-1, /*has_user_gesture=*/true, std::nullopt);
     }
   }
 }
@@ -97,7 +96,7 @@ void GoForward(blink::WebView* view) {
       blink::Frame* core_frame = blink::WebFrame::ToCoreFrame(*main_frame);
       blink::To<blink::LocalFrame>(core_frame)
           ->GetLocalFrameHostRemote()
-          .GoToEntryAtOffset(1, /*has_user_gesture=*/true, absl::nullopt);
+          .GoToEntryAtOffset(1, /*has_user_gesture=*/true, std::nullopt);
     }
   }
 }
@@ -216,7 +215,7 @@ v8::Local<v8::Value> ExecuteV8ScriptAndReturnValue(
   // The Rethrow() message is unused due to kDoNotSanitize but it still needs
   // to be non-nullopt for exceptions to be re-thrown as expected.
   auto result = blink::V8ScriptRunner::CompileAndRunScript(
-      blink::ScriptState::From(context), script,
+      blink::ScriptState::From(context->GetIsolate(), context), script,
       blink::ExecuteScriptPolicy::kExecuteScriptWhenScriptsDisabled,
       blink::V8ScriptRunner::RethrowErrorsOption::Rethrow(""));
 
@@ -283,6 +282,7 @@ void RegisterURLSchemeAsSupportingFetchAPI(const blink::WebString& scheme) {
 }
 
 struct CefScriptForbiddenScope::Impl {
+  STACK_ALLOCATED_IGNORE()
   blink::ScriptForbiddenScope scope_;
 };
 

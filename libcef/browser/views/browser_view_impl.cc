@@ -2,25 +2,26 @@
 // Use of this source code is governed by a BSD-style license that can be found
 // in the LICENSE file.
 
-#include "libcef/browser/views/browser_view_impl.h"
+#include "cef/libcef/browser/views/browser_view_impl.h"
 
 #include <memory>
+#include <optional>
 
-#include "libcef/browser/browser_host_base.h"
-#include "libcef/browser/browser_util.h"
-#include "libcef/browser/chrome/views/chrome_browser_view.h"
-#include "libcef/browser/context.h"
-#include "libcef/browser/request_context_impl.h"
-#include "libcef/browser/thread_util.h"
-#include "libcef/browser/views/window_impl.h"
-
-#include "content/public/common/input/native_web_keyboard_event.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
+#include "cef/libcef/browser/browser_event_util.h"
+#include "cef/libcef/browser/browser_host_base.h"
+#include "cef/libcef/browser/chrome/views/chrome_browser_view.h"
+#include "cef/libcef/browser/context.h"
+#include "cef/libcef/browser/request_context_impl.h"
+#include "cef/libcef/browser/thread_util.h"
+#include "cef/libcef/browser/views/widget.h"
+#include "cef/libcef/browser/views/window_impl.h"
+#include "chrome/browser/profiles/profile.h"
+#include "components/input/native_web_keyboard_event.h"
 #include "ui/content_accelerators/accelerator_util.h"
 
 namespace {
 
-absl::optional<cef_gesture_command_t> GetGestureCommand(
+std::optional<cef_gesture_command_t> GetGestureCommand(
     ui::GestureEvent* event) {
 #if BUILDFLAG(IS_MAC)
   if (event->details().type() == ui::ET_GESTURE_SWIPE) {
@@ -31,7 +32,33 @@ absl::optional<cef_gesture_command_t> GetGestureCommand(
     }
   }
 #endif
-  return absl::nullopt;
+  return std::nullopt;
+}
+
+bool ComputeAlloyStyle(CefBrowserViewDelegate* cef_delegate,
+                       bool is_devtools_popup) {
+  // Alloy style is not supported with Chrome DevTools popups.
+  const bool supports_alloy_style = !is_devtools_popup;
+  const auto default_style = CEF_RUNTIME_STYLE_CHROME;
+
+  auto result_style = default_style;
+
+  if (cef_delegate) {
+    auto requested_style = cef_delegate->GetBrowserRuntimeStyle();
+    if (requested_style == CEF_RUNTIME_STYLE_ALLOY) {
+      if (supports_alloy_style) {
+        result_style = requested_style;
+      } else {
+        LOG(ERROR) << "GetBrowserRuntimeStyle() requested Alloy style; only "
+                      "Chrome style is supported";
+      }
+    } else if (requested_style == CEF_RUNTIME_STYLE_CHROME) {
+      // Chrome style is always supported.
+      result_style = requested_style;
+    }
+  }
+
+  return result_style == CEF_RUNTIME_STYLE_ALLOY;
 }
 
 }  // namespace
@@ -53,8 +80,7 @@ CefRefPtr<CefBrowserView> CefBrowserView::GetForBrowser(
     CefRefPtr<CefBrowser> browser) {
   CEF_REQUIRE_UIT_RETURN(nullptr);
 
-  CefBrowserHostBase* browser_impl =
-      static_cast<CefBrowserHostBase*>(browser.get());
+  auto browser_impl = CefBrowserHostBase::FromBrowser(browser);
   if (browser_impl && browser_impl->is_views_hosted()) {
     return browser_impl->GetBrowserView();
   }
@@ -84,7 +110,8 @@ CefRefPtr<CefBrowserViewImpl> CefBrowserViewImpl::Create(
     return nullptr;
   }
 
-  CefRefPtr<CefBrowserViewImpl> browser_view = new CefBrowserViewImpl(delegate);
+  CefRefPtr<CefBrowserViewImpl> browser_view =
+      new CefBrowserViewImpl(delegate, /*is_devtools_popup=*/false);
   browser_view->SetPendingBrowserCreateParams(
       window_info, client, url, settings, extra_info, request_context);
   browser_view->Initialize();
@@ -95,10 +122,12 @@ CefRefPtr<CefBrowserViewImpl> CefBrowserViewImpl::Create(
 // static
 CefRefPtr<CefBrowserViewImpl> CefBrowserViewImpl::CreateForPopup(
     const CefBrowserSettings& settings,
-    CefRefPtr<CefBrowserViewDelegate> delegate) {
+    CefRefPtr<CefBrowserViewDelegate> delegate,
+    bool is_devtools) {
   CEF_REQUIRE_UIT_RETURN(nullptr);
 
-  CefRefPtr<CefBrowserViewImpl> browser_view = new CefBrowserViewImpl(delegate);
+  CefRefPtr<CefBrowserViewImpl> browser_view =
+      new CefBrowserViewImpl(delegate, is_devtools);
   browser_view->Initialize();
   browser_view->SetDefaults(settings);
   return browser_view;
@@ -108,6 +137,16 @@ void CefBrowserViewImpl::WebContentsCreated(
     content::WebContents* web_contents) {
   if (web_view()) {
     web_view()->SetWebContents(web_contents);
+  }
+}
+
+void CefBrowserViewImpl::WebContentsDestroyed(
+    content::WebContents* web_contents) {
+  // This will always be called before BrowserDestroyed().
+  DisassociateFromWidget();
+
+  if (web_view()) {
+    web_view()->SetWebContents(nullptr);
   }
 }
 
@@ -122,13 +161,13 @@ void CefBrowserViewImpl::BrowserDestroyed(CefBrowserHostBase* browser) {
   DCHECK_EQ(browser, browser_);
   browser_ = nullptr;
 
-  if (web_view()) {
-    web_view()->SetWebContents(nullptr);
-  }
+  // If this BrowserView belonged to a Widget then we expect to have received a
+  // call to DisassociateFromWidget().
+  DCHECK(!cef_widget_);
 }
 
 bool CefBrowserViewImpl::HandleKeyboardEvent(
-    const content::NativeWebKeyboardEvent& event) {
+    const input::NativeWebKeyboardEvent& event) {
   if (!root_view()) {
     return false;
   }
@@ -145,7 +184,7 @@ bool CefBrowserViewImpl::HandleKeyboardEvent(
   // Give the CefWindowDelegate a chance to handle the event.
   if (auto* window_impl = cef_window_impl()) {
     CefKeyEvent cef_event;
-    if (browser_util::GetCefKeyEvent(event, cef_event) &&
+    if (GetCefKeyEvent(event, cef_event) &&
         window_impl->OnKeyEvent(cef_event)) {
       return true;
     }
@@ -163,7 +202,7 @@ CefRefPtr<CefBrowser> CefBrowserViewImpl::GetBrowser() {
 
 CefRefPtr<CefView> CefBrowserViewImpl::GetChromeToolbar() {
   CEF_REQUIRE_VALID_RETURN(nullptr);
-  if (cef::IsChromeRuntimeEnabled()) {
+  if (!is_alloy_style_) {
     return chrome_browser_view()->cef_toolbar();
   }
 
@@ -175,6 +214,11 @@ void CefBrowserViewImpl::SetPreferAccelerators(bool prefer_accelerators) {
   if (web_view()) {
     web_view()->set_allow_accelerators(prefer_accelerators);
   }
+}
+
+cef_runtime_style_t CefBrowserViewImpl::GetRuntimeStyle() {
+  CEF_REQUIRE_VALID_RETURN(CEF_RUNTIME_STYLE_DEFAULT);
+  return IsAlloyStyle() ? CEF_RUNTIME_STYLE_ALLOY : CEF_RUNTIME_STYLE_CHROME;
 }
 
 void CefBrowserViewImpl::RequestFocus() {
@@ -200,7 +244,7 @@ void CefBrowserViewImpl::Detach() {
   DCHECK(!root_view());
 
   if (browser_) {
-    // With the Alloy runtime |browser_| will disappear when WindowDestroyed()
+    // With Alloy style |browser_| will disappear when WindowDestroyed()
     // indirectly calls BrowserDestroyed() so keep a reference.
     CefRefPtr<CefBrowserHostBase> browser = browser_;
 
@@ -217,7 +261,26 @@ void CefBrowserViewImpl::GetDebugInfo(base::Value::Dict* info,
   }
 }
 
-void CefBrowserViewImpl::OnBrowserViewAdded() {
+void CefBrowserViewImpl::AddedToWidget() {
+  DCHECK(!cef_widget_);
+
+  views::Widget* widget = root_view()->GetWidget();
+  DCHECK(widget);
+  CefWidget* cef_widget = CefWidget::GetForWidget(widget);
+  DCHECK(cef_widget);
+
+  if (!browser_) {
+    if (cef_widget->IsAlloyStyle() && !is_alloy_style_) {
+      LOG(ERROR) << "Cannot add Chrome style BrowserView to Alloy style Window";
+      return;
+    }
+
+    if (cef_widget->IsChromeStyle() && cef_widget->GetThemeProfile()) {
+      LOG(ERROR) << "Cannot add multiple Chrome style BrowserViews";
+      return;
+    }
+  }
+
   if (!browser_ && pending_browser_create_params_) {
     // Top-level browsers will be created when this view is added to the views
     // hierarchy.
@@ -228,6 +291,19 @@ void CefBrowserViewImpl::OnBrowserViewAdded() {
 
     pending_browser_create_params_.reset(nullptr);
   }
+
+  cef_widget_ = cef_widget;
+  profile_ = Profile::FromBrowserContext(browser_->GetBrowserContext());
+  DCHECK(profile_);
+
+  // May call Widget::ThemeChanged().
+  cef_widget_->AddAssociatedProfile(profile_);
+}
+
+void CefBrowserViewImpl::RemovedFromWidget() {
+  // With Chrome style this may be called after BrowserDestroyed(), in which
+  // case the following call will be a no-op.
+  DisassociateFromWidget();
 }
 
 void CefBrowserViewImpl::OnBoundsChanged() {
@@ -242,8 +318,8 @@ bool CefBrowserViewImpl::OnGestureEvent(ui::GestureEvent* event) {
       return true;
     }
 
-    if (!cef::IsChromeRuntimeEnabled() && browser_) {
-      // Default handling for the Alloy runtime.
+    if (is_alloy_style_ && browser_) {
+      // Default handling for Alloy style.
       switch (*command) {
         case CEF_GESTURE_COMMAND_BACK:
           browser_->GoBack();
@@ -260,8 +336,11 @@ bool CefBrowserViewImpl::OnGestureEvent(ui::GestureEvent* event) {
 }
 
 CefBrowserViewImpl::CefBrowserViewImpl(
-    CefRefPtr<CefBrowserViewDelegate> delegate)
-    : ParentClass(delegate), weak_ptr_factory_(this) {}
+    CefRefPtr<CefBrowserViewDelegate> delegate,
+    bool is_devtools_popup)
+    : ParentClass(delegate),
+      is_alloy_style_(ComputeAlloyStyle(delegate.get(), is_devtools_popup)),
+      weak_ptr_factory_(this) {}
 
 void CefBrowserViewImpl::SetPendingBrowserCreateParams(
     const CefWindowInfo& window_info,
@@ -272,7 +351,8 @@ void CefBrowserViewImpl::SetPendingBrowserCreateParams(
     CefRefPtr<CefRequestContext> request_context) {
   DCHECK(!pending_browser_create_params_);
   pending_browser_create_params_ = std::make_unique<CefBrowserCreateParams>();
-  pending_browser_create_params_->MaybeSetWindowInfo(window_info);
+  pending_browser_create_params_->MaybeSetWindowInfo(
+      window_info, /*allow_alloy_style=*/true, /*allow_chrome_style=*/true);
   pending_browser_create_params_->client = client;
   pending_browser_create_params_->url = url;
   pending_browser_create_params_->settings = settings;
@@ -286,7 +366,7 @@ void CefBrowserViewImpl::SetDefaults(const CefBrowserSettings& settings) {
 }
 
 views::View* CefBrowserViewImpl::CreateRootView() {
-  if (cef::IsChromeRuntimeEnabled()) {
+  if (!is_alloy_style_) {
     return new ChromeBrowserView(this);
   }
 
@@ -294,7 +374,7 @@ views::View* CefBrowserViewImpl::CreateRootView() {
 }
 
 void CefBrowserViewImpl::InitializeRootView() {
-  if (cef::IsChromeRuntimeEnabled()) {
+  if (!is_alloy_style_) {
     chrome_browser_view()->Initialize();
   } else {
     static_cast<CefBrowserViewView*>(root_view())->Initialize();
@@ -306,7 +386,7 @@ views::WebView* CefBrowserViewImpl::web_view() const {
     return nullptr;
   }
 
-  if (cef::IsChromeRuntimeEnabled()) {
+  if (!is_alloy_style_) {
     return chrome_browser_view()->contents_web_view();
   }
 
@@ -314,7 +394,7 @@ views::WebView* CefBrowserViewImpl::web_view() const {
 }
 
 ChromeBrowserView* CefBrowserViewImpl::chrome_browser_view() const {
-  CHECK(cef::IsChromeRuntimeEnabled());
+  CHECK(!is_alloy_style_);
   return static_cast<ChromeBrowserView*>(root_view());
 }
 
@@ -329,7 +409,7 @@ CefWindowImpl* CefBrowserViewImpl::cef_window_impl() const {
 }
 
 bool CefBrowserViewImpl::HandleAccelerator(
-    const content::NativeWebKeyboardEvent& event,
+    const input::NativeWebKeyboardEvent& event,
     views::FocusManager* focus_manager) {
   // Previous calls to TranslateMessage can generate Char events as well as
   // RawKeyDown events, even if the latter triggered an accelerator.  In these
@@ -368,4 +448,15 @@ bool CefBrowserViewImpl::HandleAccelerator(
 
 void CefBrowserViewImpl::RequestFocusInternal() {
   ParentClass::RequestFocus();
+}
+
+void CefBrowserViewImpl::DisassociateFromWidget() {
+  if (!cef_widget_) {
+    return;
+  }
+
+  // May call Widget::ThemeChanged().
+  cef_widget_->RemoveAssociatedProfile(profile_);
+  cef_widget_ = nullptr;
+  profile_ = nullptr;
 }

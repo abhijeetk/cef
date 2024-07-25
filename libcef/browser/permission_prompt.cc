@@ -2,14 +2,12 @@
 // 2016 The Chromium Authors. All rights reserved. Use of this source code is
 // governed by a BSD-style license that can be found in the LICENSE file.
 
-#include "libcef/browser/permission_prompt.h"
-
-#include "libcef/browser/browser_host_base.h"
-#include "libcef/features/runtime.h"
+#include "cef/libcef/browser/permission_prompt.h"
 
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "base/notreached.h"
+#include "cef/libcef/browser/browser_host_base.h"
 #include "chrome/browser/ui/permission_bubble/permission_prompt.h"
 
 namespace permission_prompt {
@@ -125,10 +123,15 @@ class CefPermissionPrompt : public permissions::PermissionPrompt {
       const override {
     return permissions::PermissionPromptDisposition::CUSTOM_MODAL_DIALOG;
   }
-  absl::optional<gfx::Rect> GetViewBoundsInScreen() const override {
-    return absl::nullopt;
+  std::optional<gfx::Rect> GetViewBoundsInScreen() const override {
+    return std::nullopt;
   }
   bool ShouldFinalizeRequestAfterDecided() const override { return true; }
+  std::vector<permissions::ElementAnchoredBubbleVariant> GetPromptVariants()
+      const override {
+    return {};
+  }
+  bool IsAskPrompt() const override { return true; }
 
  private:
   // We don't expose AcceptThisTime() because it's a special case for
@@ -201,18 +204,22 @@ cef_permission_request_types_t GetCefRequestType(
       return CEF_PERMISSION_TYPE_LOCAL_FONTS;
     case permissions::RequestType::kGeolocation:
       return CEF_PERMISSION_TYPE_GEOLOCATION;
+    case permissions::RequestType::kIdentityProvider:
+      return CEF_PERMISSION_TYPE_IDENTITY_PROVIDER;
     case permissions::RequestType::kIdleDetection:
       return CEF_PERMISSION_TYPE_IDLE_DETECTION;
     case permissions::RequestType::kMicStream:
       return CEF_PERMISSION_TYPE_MIC_STREAM;
-    case permissions::RequestType::kMidi:
-      return CEF_PERMISSION_TYPE_MIDI;
     case permissions::RequestType::kMidiSysex:
       return CEF_PERMISSION_TYPE_MIDI_SYSEX;
     case permissions::RequestType::kMultipleDownloads:
       return CEF_PERMISSION_TYPE_MULTIPLE_DOWNLOADS;
     case permissions::RequestType::kNotifications:
       return CEF_PERMISSION_TYPE_NOTIFICATIONS;
+    case permissions::RequestType::kKeyboardLock:
+      return CEF_PERMISSION_TYPE_KEYBOARD_LOCK;
+    case permissions::RequestType::kPointerLock:
+      return CEF_PERMISSION_TYPE_POINTER_LOCK;
 #if BUILDFLAG(IS_WIN)
     case permissions::RequestType::kProtectedMediaIdentifier:
       return CEF_PERMISSION_TYPE_PROTECTED_MEDIA_IDENTIFIER;
@@ -250,7 +257,11 @@ std::unique_ptr<permissions::PermissionPrompt> CreatePermissionPromptImpl(
     bool* default_handling) {
   CEF_REQUIRE_UIT();
 
+  bool is_alloy_style = false;
+
   if (auto browser = CefBrowserHostBase::GetBrowserForContents(web_contents)) {
+    is_alloy_style = browser->IsAlloyStyle();
+
     if (auto client = browser->GetClient()) {
       if (auto handler = client->GetPermissionHandler()) {
         auto permission_prompt =
@@ -284,13 +295,13 @@ std::unique_ptr<permissions::PermissionPrompt> CreatePermissionPromptImpl(
     }
   }
 
-  if (cef::IsAlloyRuntimeEnabled()) {
+  if (is_alloy_style) {
     LOG(INFO) << "Implement OnShowPermissionPrompt to override default IGNORE "
                  "handling of permission prompts.";
   }
 
-  // Proceed with default handling. This will be IGNORE with the Alloy runtime
-  // and default UI prompt with the Chrome runtime.
+  // Proceed with default handling. This will be IGNORE with Alloy style and
+  // default UI prompt with Chrome style.
   *default_handling = true;
   return nullptr;
 }

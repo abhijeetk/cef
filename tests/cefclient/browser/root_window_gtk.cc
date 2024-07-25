@@ -4,10 +4,9 @@
 
 #include "tests/cefclient/browser/root_window_gtk.h"
 
+#include <X11/Xlib.h>
 #include <gdk/gdk.h>
 #include <gdk/gdkx.h>
-
-#include <X11/Xlib.h>
 #undef Success     // Definition conflicts with cef_message_router.h
 #undef RootWindow  // Definition conflicts with root_window.h
 
@@ -81,11 +80,11 @@ void MaximizeWindow(GtkWindow* window) {
 
 }  // namespace
 
-RootWindowGtk::RootWindowGtk()
-    : with_controls_(false),
+RootWindowGtk::RootWindowGtk(bool use_alloy_style)
+    : RootWindow(use_alloy_style),
+      with_controls_(false),
       always_on_top_(false),
       with_osr_(false),
-      with_extension_(false),
       is_popup_(false),
       initialized_(false),
       window_(nullptr),
@@ -119,7 +118,6 @@ void RootWindowGtk::Init(RootWindow::Delegate* delegate,
   with_controls_ = config->with_controls;
   always_on_top_ = config->always_on_top;
   with_osr_ = config->with_osr;
-  with_extension_ = config->window_type == WindowType::EXTENSION;
   start_rect_ = config->bounds;
 
   CreateBrowserWindow(config->url);
@@ -277,11 +275,6 @@ ClientWindowHandle RootWindowGtk::GetWindowHandle() const {
 bool RootWindowGtk::WithWindowlessRendering() const {
   REQUIRE_MAIN_THREAD();
   return with_osr_;
-}
-
-bool RootWindowGtk::WithExtension() const {
-  REQUIRE_MAIN_THREAD();
-  return with_extension_;
 }
 
 void RootWindowGtk::CreateBrowserWindow(const std::string& startup_url) {
@@ -460,8 +453,6 @@ void RootWindowGtk::OnBrowserCreated(CefRefPtr<CefBrowser> browser) {
   if (is_popup_) {
     CreateRootWindow(CefBrowserSettings(), false);
   }
-
-  delegate_->OnBrowserCreated(this, browser);
 }
 
 void RootWindowGtk::OnBrowserWindowClosing() {

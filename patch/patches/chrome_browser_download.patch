@@ -1,0 +1,86 @@
+diff --git chrome/browser/download/chrome_download_manager_delegate.cc chrome/browser/download/chrome_download_manager_delegate.cc
+index 2628f1751cd14..cc2c330d8db5d 100644
+--- chrome/browser/download/chrome_download_manager_delegate.cc
++++ chrome/browser/download/chrome_download_manager_delegate.cc
+@@ -148,6 +148,10 @@
+ #include "chrome/browser/safe_browsing/download_protection/download_protection_util.h"
+ #endif
+ 
++#if BUILDFLAG(ENABLE_CEF)
++#include "cef/libcef/browser/download_manager_delegate.h"
++#endif
++
+ using content::BrowserThread;
+ using content::DownloadManager;
+ using download::DownloadItem;
+@@ -492,6 +496,11 @@ ChromeDownloadManagerDelegate::ChromeDownloadManagerDelegate(Profile* profile)
+   download_dialog_bridge_ = std::make_unique<DownloadDialogBridge>();
+   download_message_bridge_ = std::make_unique<DownloadMessageBridge>();
+ #endif
++
++#if BUILDFLAG(ENABLE_CEF)
++  cef_delegate_ =
++      cef::DownloadManagerDelegate::Create(profile_->GetDownloadManager());
++#endif
+ }
+ 
+ ChromeDownloadManagerDelegate::~ChromeDownloadManagerDelegate() {
+@@ -551,6 +560,9 @@ void ChromeDownloadManagerDelegate::Shutdown() {
+     download_manager_->RemoveObserver(this);
+     download_manager_ = nullptr;
+   }
++#if BUILDFLAG(ENABLE_CEF)
++  cef_delegate_.reset();
++#endif
+ }
+ 
+ void ChromeDownloadManagerDelegate::OnDownloadCanceledAtShutdown(
+@@ -619,6 +631,12 @@ bool ChromeDownloadManagerDelegate::DetermineDownloadTarget(
+     ReportPDFLoadStatus(PDFLoadStatus::kTriggeredNoGestureDriveByDownload);
+   }
+ 
++#if BUILDFLAG(ENABLE_CEF)
++  if (cef_delegate_->DetermineDownloadTarget(download, callback)) {
++    return true;
++  }
++#endif
++
+   DownloadTargetDeterminer::CompletionCallback target_determined_callback =
+       base::BindOnce(&ChromeDownloadManagerDelegate::OnDownloadTargetDetermined,
+                      weak_ptr_factory_.GetWeakPtr(), download->GetId(),
+diff --git chrome/browser/download/chrome_download_manager_delegate.h chrome/browser/download/chrome_download_manager_delegate.h
+index af7f1d5fac12b..8cd591798ab61 100644
+--- chrome/browser/download/chrome_download_manager_delegate.h
++++ chrome/browser/download/chrome_download_manager_delegate.h
+@@ -19,6 +19,7 @@
+ #include "base/task/sequenced_task_runner.h"
+ #include "base/unguessable_token.h"
+ #include "build/build_config.h"
++#include "cef/libcef/features/features.h"
+ #include "chrome/browser/download/download_completion_blocker.h"
+ #include "chrome/browser/download/download_target_determiner_delegate.h"
+ #include "components/download/public/common/download_danger_type.h"
+@@ -57,6 +58,12 @@ class CrxInstallError;
+ }
+ #endif
+ 
++#if BUILDFLAG(ENABLE_CEF)
++namespace cef {
++class DownloadManagerDelegate;
++}
++#endif
++
+ // This is the Chrome side helper for the download system.
+ class ChromeDownloadManagerDelegate
+     : public content::DownloadManagerDelegate,
+@@ -389,6 +396,10 @@ class ChromeDownloadManagerDelegate
+   // Whether a file picker dialog is showing.
+   bool is_file_picker_showing_;
+ 
++#if BUILDFLAG(ENABLE_CEF)
++  std::unique_ptr<cef::DownloadManagerDelegate> cef_delegate_;
++#endif
++
+   base::WeakPtrFactory<ChromeDownloadManagerDelegate> weak_ptr_factory_{this};
+ };
+ 

@@ -2,14 +2,14 @@
 // reserved. Use of this source code is governed by a BSD-style license that
 // can be found in the LICENSE file.
 
-#include "libcef/browser/net_service/resource_handler_wrapper.h"
+#include "cef/libcef/browser/net_service/resource_handler_wrapper.h"
 
-#include "libcef/browser/net_service/proxy_url_loader_factory.h"
-#include "libcef/browser/thread_util.h"
-#include "libcef/common/net_service/net_service_util.h"
-#include "libcef/common/request_impl.h"
-
+#include "base/memory/raw_ptr.h"
 #include "base/strings/string_number_conversions.h"
+#include "cef/libcef/browser/net_service/proxy_url_loader_factory.h"
+#include "cef/libcef/browser/thread_util.h"
+#include "cef/libcef/common/net_service/net_service_util.h"
+#include "cef/libcef/common/request_impl.h"
 #include "net/http/http_status_code.h"
 
 namespace net_service {
@@ -225,7 +225,7 @@ class ReadResponseCallbackWrapper : public CefCallback {
   }
 
   scoped_refptr<HandlerProvider> handler_provider_;
-  net::IOBuffer* const dest_;
+  const raw_ptr<net::IOBuffer> dest_;
   int length_;
   CefRefPtr<ReadCallbackWrapper> callback_;
 

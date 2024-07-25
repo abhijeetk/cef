@@ -2,15 +2,15 @@
 // reserved. Use of this source code is governed by a BSD-style license that
 // can be found in the LICENSE file.
 
-#include "libcef/common/response_impl.h"
+#include "cef/libcef/common/response_impl.h"
 
 #include <string>
 
-#include "libcef/common/net/http_header_utils.h"
-#include "libcef/common/net_service/net_service_util.h"
-
 #include "base/logging.h"
+#include "base/memory/raw_ptr.h"
 #include "base/strings/string_util.h"
+#include "cef/libcef/common/net/http_header_utils.h"
+#include "cef/libcef/common/net_service/net_service_util.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "third_party/blink/public/platform/web_http_header_visitor.h"
@@ -227,7 +227,7 @@ void CefResponseImpl::Set(const blink::WebURLResponse& response) {
     }
 
    private:
-    HeaderMap* map_;
+    raw_ptr<HeaderMap> map_;
   };
 
   HeaderVisitor visitor(&header_map_);
